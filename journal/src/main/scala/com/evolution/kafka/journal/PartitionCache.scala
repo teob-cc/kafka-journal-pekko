@@ -958,7 +958,7 @@ private[journal] object PartitionCache {
       }
     }
 
-    implicit val orderingEntry: Ordering[Entry] = Ordering.by { (a: Entry) => a.offset }(Offset.orderingOffset.reverse)
+    implicit val orderingEntry: Ordering[Entry] = Ordering.by { (a: Entry) => a.offset }(using Offset.orderingOffset.reverse)
   }
 
   /**

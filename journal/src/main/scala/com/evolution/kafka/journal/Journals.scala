@@ -188,7 +188,7 @@ object Journals {
           )(implicit
             kafkaWrite: KafkaWrite[F, A],
           ): F[PartitionOffset] = {
-            appendEvents(key, events, metadata, headers)(kafkaWriteWithMetrics)
+            appendEvents(key, events, metadata, headers)(using kafkaWriteWithMetrics)
           }
 
           def read[A](
@@ -384,7 +384,7 @@ object Journals {
       (record: ProducerRecord[String, ByteVector]) =>
         {
           for {
-            metadata <- producer.send(record)(toBytesKey, toBytesValue)
+            metadata <- producer.send(record)(using toBytesKey, toBytesValue)
             partition = metadata.topicPartition.partition
             offset <- metadata
               .offset

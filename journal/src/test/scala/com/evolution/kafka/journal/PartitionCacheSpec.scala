@@ -31,7 +31,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case _: Result.Later.Empty[IO] => () }
+          a <- a.matchOrError { case _: Result.Later.Empty[IO @unchecked] => () }
         } yield a
       }
       .run()
@@ -70,7 +70,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
           a <- cache.remove(offset0)
           _ <- IO { a shouldEqual none }
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case _: Result.Later.Empty[IO] => () }
+          a <- a.matchOrError { case _: Result.Later.Empty[IO @unchecked] => () }
         } yield a
       }
       .run()
@@ -138,7 +138,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
           a <- cache.add(Record(id0, offset0, actionHeader))
           _ <- IO { a shouldEqual none }
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case a: Result.Later.Behind[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Behind[IO @unchecked] => a.value }
           b <- cache.add(Record(id0, offset1, actionHeader))
           _ <- IO { b shouldEqual Diff(1).some }
           a <- a
@@ -155,7 +155,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
           a <- cache.add(Record(id0, offset0, actionHeader))
           _ <- IO { a shouldEqual none }
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case a: Result.Later.Behind[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Behind[IO @unchecked] => a.value }
           b <- cache.add(Record(id1, offset1, actionHeader))
           _ <- IO { b shouldEqual Diff(1).some }
           a <- a
@@ -172,7 +172,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
           a <- cache.add(Record(id0, offset0, actionHeader))
           _ <- IO { a shouldEqual none }
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case a: Result.Later.Behind[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Behind[IO @unchecked] => a.value }
           b <- cache.add(Record(id0, offset2, actionHeader))
           _ <- IO { b shouldEqual Diff(2).some }
           a <- a
@@ -189,7 +189,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
           a <- cache.add(Record(id0, offset0, actionHeader))
           _ <- IO { a shouldEqual none }
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case a: Result.Later.Behind[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Behind[IO @unchecked] => a.value }
           b <- cache.add(Record(id1, offset2, actionHeader))
           _ <- IO { b shouldEqual Diff(2).some }
           a <- a
@@ -206,7 +206,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
           a <- cache.add(Record(id0, offset0, actionHeader))
           _ <- IO { a shouldEqual none }
           a <- cache.get(id0, offset2)
-          a <- a.matchOrError { case a: Result.Later.Behind[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Behind[IO @unchecked] => a.value }
           b <- cache.add(Record(id0, offset1, actionHeader))
           _ <- IO { b shouldEqual Diff(1).some }
           b <- a.timeout(10.millis).attempt
@@ -227,7 +227,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
           a <- cache.add(Record(id0, offset0, actionHeader))
           _ <- IO { a shouldEqual none }
           a <- cache.get(id0, offset2)
-          a <- a.matchOrError { case a: Result.Later.Behind[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Behind[IO @unchecked] => a.value }
           b <- cache.add(Record(id1, offset1, actionHeader))
           _ <- IO { b shouldEqual Diff(1).some }
           b <- a.timeout(10.millis).attempt
@@ -246,7 +246,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset0)
-          a <- a.matchOrError { case a: Result.Later.Empty[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Empty[IO @unchecked] => a.value }
           b <- cache.add(Record(id0, offset0, actionHeader))
           _ <- IO { b shouldEqual none }
           a <- a
@@ -261,7 +261,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset0)
-          a <- a.matchOrError { case a: Result.Later.Empty[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Empty[IO @unchecked] => a.value }
           b <- cache.add(Record(id1, offset0, actionHeader))
           _ <- IO { b shouldEqual none }
           a <- a
@@ -276,7 +276,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset0)
-          a <- a.matchOrError { case a: Result.Later.Empty[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Empty[IO @unchecked] => a.value }
           b <- cache.add(Record(id0, offset1, actionHeader))
           _ <- IO { b shouldEqual none }
           a <- a
@@ -291,7 +291,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset0)
-          a <- a.matchOrError { case a: Result.Later.Empty[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Empty[IO @unchecked] => a.value }
           d <- cache.add(Record(id1, offset1, actionHeader))
           _ <- IO { d shouldEqual none }
           a <- a
@@ -306,7 +306,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case a: Result.Later.Empty[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Empty[IO @unchecked] => a.value }
           _ <- cache.add(Record(id0, offset0, actionHeader))
           b <- a.timeout(10.millis).attempt
           _ <- IO { b should matchPattern { case Left(_: TimeoutException) => } }
@@ -323,7 +323,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case a: Result.Later.Empty[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Empty[IO @unchecked] => a.value }
           _ <- cache.add(Record(id1, offset0, actionHeader))
           b <- a.timeout(10.millis).attempt
           _ <- IO { b should matchPattern { case Left(_: TimeoutException) => } }
@@ -340,7 +340,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset0)
-          a <- a.matchOrError { case a: Result.Later.Empty[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Empty[IO @unchecked] => a.value }
           _ <- cache.remove(offset0)
           a <- a
           _ <- IO { a shouldEqual Result.ahead }
@@ -354,7 +354,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset0)
-          a <- a.matchOrError { case a: Result.Later.Empty[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Empty[IO @unchecked] => a.value }
           _ <- cache.remove(offset1)
           a <- a
           _ <- IO { a shouldEqual Result.ahead }
@@ -368,7 +368,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case a: Result.Later.Empty[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Empty[IO @unchecked] => a.value }
           _ <- cache.remove(offset0)
           b <- a.timeout(10.millis).attempt
           _ <- IO { b should matchPattern { case Left(_: TimeoutException) => } }
@@ -386,7 +386,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
         for {
           _ <- cache.add(Record(id0, offset0, actionHeader))
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case a: Result.Later.Behind[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Behind[IO @unchecked] => a.value }
           _ <- cache.remove(offset1)
           a <- a
           _ <- IO { a shouldEqual Result.ahead }
@@ -401,7 +401,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
         for {
           _ <- cache.add(Record(id0, offset0, actionHeader))
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case a: Result.Later.Behind[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Behind[IO @unchecked] => a.value }
           _ <- cache.remove(offset2)
           a <- a
           _ <- IO { a shouldEqual Result.ahead }
@@ -416,7 +416,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
         for {
           _ <- cache.add(Record(id0, offset0, actionHeader))
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case a: Result.Later.Behind[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Behind[IO @unchecked] => a.value }
           _ <- cache.remove(offset0)
           b <- a.timeout(10.millis).attempt
           _ <- IO { b should matchPattern { case Left(_: TimeoutException) => } }
@@ -481,7 +481,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset0)
-          a <- a.matchOrError { case a: Result.Later.Empty[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Empty[IO @unchecked] => a.value }
           d <- cache.add(
             Nel.of(
               Record(id0, offset0, actionHeaderOf(seqNr0)),
@@ -582,7 +582,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
       .use { cache =>
         for {
           a <- cache.get(id0, offset0)
-          a <- a.matchOrError { case a: Result.Later.Empty[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Empty[IO @unchecked] => a.value }
           a <- a
           _ <- IO { a shouldEqual Result.Now.timeout(10.millis) }
         } yield {}
@@ -597,7 +597,7 @@ class PartitionCacheSpec extends AsyncFunSuite with Matchers {
         for {
           _ <- cache.add(Record(id0, offset0, actionHeader))
           a <- cache.get(id0, offset1)
-          a <- a.matchOrError { case a: Result.Later.Behind[IO] => a.value }
+          a <- a.matchOrError { case a: Result.Later.Behind[IO @unchecked] => a.value }
           a <- a
           _ <- IO { a shouldEqual Result.Now.timeout(10.millis) }
         } yield {}
@@ -651,8 +651,8 @@ object PartitionCacheSpec {
   }
 
   private implicit class Ops[A](val self: A) extends AnyVal {
-    def matchOrError[B](pf: PartialFunction[A, B]): IO[B] = {
-      pf.lift(self) match {
+    def matchOrError[B](f: PartialFunction[Any, B]): IO[B] = {
+      f.lift(self) match {
         case Some(a) =>
           a.pure[IO]
         case None =>

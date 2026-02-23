@@ -6,47 +6,22 @@ lazy val commonSettings = Seq(
   organization := "com.evolution",
   organizationName := "Evolution",
   organizationHomepage := Some(url("https://evolution.com")),
-  homepage := Some(url("https://github.com/evolution-gaming/kafka-journal")),
+  homepage := Some(url("https://github.com/lambda-house/kafka-journal-pekko")),
   startYear := Some(2018),
-  crossScalaVersions := Seq("2.13.18", "3.3.7"),
+  crossScalaVersions := Seq("3.8.1"),
   scalaVersion := crossScalaVersions.value.head,
   scalacOptions ++= Seq(
     "-release:17",
     "-deprecation",
-  ),
-  scalacOptions ++= crossSettings(
-    scalaVersion = scalaVersion.value,
-    // Good compiler options for Scala 2.13 are coming from com.evolution:sbt-scalac-opts-plugin:0.0.9,
-    // but its support for Scala 3 is limited, especially what concerns linting options.
-    //
-    // If Scala 3 is made the primary target, good linting scalac options for it should be added first.
-    if3 = Seq(
-      "-Ykind-projector:underscores",
-
-      // disable new brace-less syntax:
-      // https://alexn.org/blog/2022/10/24/scala-3-optional-braces/
-      "-no-indent",
-
-      // improve error messages:
-      "-explain",
-      "-explain-types",
-    ),
-    if2 = Seq(
-      "-Xsource:3",
-    ),
+    "-Xkind-projector:underscores",
+    "-no-indent",
+    "-explain",
+    "-explain-types",
   ),
   Compile / doc / scalacOptions ++= Seq("-groups", "-implicits", "-no-link-warnings"),
   Compile / doc / scalacOptions -= "-Xfatal-warnings",
-  publishTo := Some(Resolver.evolutionReleases),
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
-  // set up compiler plugins:
-  libraryDependencies ++= crossSettings(
-    scalaVersion = scalaVersion.value,
-    if3 = Seq(),
-    if2 = Seq(compilerPlugin(KindProjector cross CrossVersion.full)),
-  ),
   libraryDependencySchemes ++= Seq(
-    "org.scala-lang.modules" %% "scala-java8-compat" % "always",
     "org.scala-lang.modules" %% "scala-xml" % "always",
   ),
   autoAPIMappings := true,
@@ -78,12 +53,12 @@ ThisBuild / libraryDependencySchemes ++= Seq(
 )
 
 val alias: Seq[sbt.Def.Setting[?]] =
-  addCommandAlias("fmt", "+all scalafmtAll scalafmtSbt") ++
+  addCommandAlias("fmt", "all scalafmtAll scalafmtSbt") ++
     addCommandAlias(
-      "check", // check is called with + from the release action
+      "check",
       "all versionPolicyCheck Compile/doc scalafmtCheckAll scalafmtSbtCheck",
     ) ++
-    addCommandAlias("build", "+all compile test")
+    addCommandAlias("build", "all compile test")
 
 lazy val root = project
   .in(file("."))
@@ -92,6 +67,7 @@ lazy val root = project
   .settings(publish / skip := true)
   .settings(alias)
   .aggregate(
+    libs,
     core,
     journal,
     snapshot,
@@ -100,37 +76,50 @@ lazy val root = project
     eventualCassandra,
     snapshotCassandra,
     circe,
-    akkaPersistence,
-    akkaPersistenceCirce,
-    akkaTests,
-    pekkoPersistence,
-    pekkoPersistenceCirce,
-    pekkoTests,
+    persistence,
+    persistenceCirce,
+    tests,
     ScalaTestIO,
+  )
+
+lazy val libs = project
+  .in(file("libs"))
+  .settings(name := "kafka-journal-libs")
+  .settings(commonSettings)
+  .settings(
+    libraryDependencies ++= Seq(
+      Cats.Core,
+      Cats.Effect,
+      Pekko.Actor,
+      Pekko.Testkit % Test,
+      Pureconfig.Core,
+      Pureconfig.Cats,
+      Pureconfig.Generic,
+      PlayJson,
+      Jsoniter,
+      KafkaClients,
+      CassandraDriver,
+      Scodec.Bits,
+      Scodec.Core,
+      Slf4j.Api,
+      ScalaTest,
+      Logback.Classic % Test,
+    ),
   )
 
 lazy val core = project
   .in(file("core"))
   .settings(name := "kafka-journal-core")
   .settings(commonSettings)
-  .dependsOn(ScalaTestIO % Test)
+  .dependsOn(libs, ScalaTestIO % Test)
   .settings(
     libraryDependencies ++= Seq(
-      SKafka,
-      CatsHelper,
       PlayJson,
-      PlayJsonJsoniter,
-      SStream,
-      Hostname,
       Pureconfig.Core,
       Cats.Core,
       Cats.Effect,
       Scodec.Bits,
-    ),
-    libraryDependencies ++= crossSettings(
-      scalaVersion = scalaVersion.value,
-      if2 = Seq(Scodec.Scala2.Core),
-      if3 = Seq(Scodec.Scala3.Core),
+      Scodec.Core,
     ),
   )
 
@@ -138,35 +127,19 @@ lazy val journal = project
   .in(file("journal"))
   .settings(name := "kafka-journal")
   .settings(commonSettings)
-  .dependsOn(core % "test->test;compile->compile", ScalaTestIO % Test)
+  .dependsOn(libs, core % "test->test;compile->compile", ScalaTestIO % Test)
   .settings(
     libraryDependencies ++= Seq(
       KafkaClients,
-      SKafka,
-      Random,
-      Retry,
-      CatsHelper,
       PlayJson,
-      PlayJsonJsoniter,
-      Hostname,
-      SCache,
-      ScalaJava8Compat,
       Pureconfig.Core,
       Pureconfig.Cats,
-      Smetrics.SMetrics,
-      SStream,
+      Pureconfig.Generic,
       Cats.Core,
       Cats.Effect,
-      ResourcePool,
       ScalaTest % Test,
-      ExecutorTools % Test,
       Logback.Core % Test,
       Logback.Classic % Test,
-    ),
-    libraryDependencies ++= crossSettings(
-      scalaVersion = scalaVersion.value,
-      if2 = Seq(Pureconfig.Scala2.Generic),
-      if3 = Seq(Pureconfig.Scala3.Generic),
     ),
   )
 
@@ -177,39 +150,21 @@ lazy val snapshot = project
   .dependsOn(core)
   .settings(libraryDependencies ++= Seq(ScalaTest % Test))
 
-lazy val akkaPersistence = project
-  .in(file("akka/persistence"))
-  .settings(name := "kafka-journal-akka-persistence")
+lazy val persistence = project
+  .in(file("persistence"))
+  .settings(name := "kafka-journal-persistence")
   .settings(commonSettings)
-  .dependsOn(journal % "test->test;compile->compile", eventualCassandra, snapshotCassandra)
+  .dependsOn(libs, journal % "test->test;compile->compile", eventualCassandra, snapshotCassandra)
   .settings(
     libraryDependencies ++= Seq(
-      AkkaSerialization,
-      CatsHelper,
-      Akka.Persistence,
-      Akka.Testkit % Test,
-      AkkaTestActor % Test,
-    ),
-  )
-
-lazy val pekkoPersistence = project
-  .in(file("pekko/persistence"))
-  .settings(name := "kafka-journal-pekko-persistence")
-  .settings(commonSettings)
-  .dependsOn(journal % "test->test;compile->compile", eventualCassandra, snapshotCassandra)
-  .settings(
-    libraryDependencies ++= Seq(
-      PekkoSerialization,
-      CatsHelper,
       Pekko.Persistence,
       Pekko.Testkit % Test,
-      PekkoTestActor % Test,
     ),
   )
 
-lazy val akkaTests = project
-  .in(file("akka/tests"))
-  .settings(name := "kafka-journal-akka-tests")
+lazy val tests = project
+  .in(file("tests"))
+  .settings(name := "kafka-journal-tests")
   .settings(commonSettings)
   .settings(
     Seq(
@@ -219,38 +174,9 @@ lazy val akkaTests = project
       Test / javaOptions ++= Seq("-Xms3G", "-Xmx3G"),
     ),
   )
-  .dependsOn(akkaPersistence % "test->test;compile->compile", akkaPersistenceCirce, replicator)
+  .dependsOn(persistence % "test->test;compile->compile", persistenceCirce, replicator)
   .settings(
     libraryDependencies ++= Seq(
-      CatsHelper,
-      TestContainers.Cassandra % Test,
-      TestContainers.Kafka % Test,
-      ScalaTest % Test,
-      Akka.PersistenceTck % Test,
-      Akka.Slf4j % Test,
-      Slf4j.Log4jOverSlf4j % Test,
-      Logback.Core % Test,
-      Logback.Classic % Test,
-      ScalaTest % Test,
-    ),
-  )
-
-lazy val pekkoTests = project
-  .in(file("pekko/tests"))
-  .settings(name := "kafka-journal-pekko-tests")
-  .settings(commonSettings)
-  .settings(
-    Seq(
-      publish / skip := true,
-      Test / fork := true,
-      Test / parallelExecution := false,
-      Test / javaOptions ++= Seq("-Xms3G", "-Xmx3G"),
-    ),
-  )
-  .dependsOn(pekkoPersistence % "test->test;compile->compile", pekkoPersistenceCirce, replicator)
-  .settings(
-    libraryDependencies ++= Seq(
-      CatsHelper,
       TestContainers.Cassandra % Test,
       TestContainers.Kafka % Test,
       ScalaTest % Test,
@@ -259,7 +185,6 @@ lazy val pekkoTests = project
       Slf4j.Log4jOverSlf4j % Test,
       Logback.Core % Test,
       Logback.Classic % Test,
-      ScalaTest % Test,
     ),
   )
 
@@ -273,7 +198,6 @@ lazy val replicator = project
     ScalaTestIO % Test,
   )
   .settings(libraryDependencies ++= Seq(
-    CatsHelper,
     Logback.Core % Test,
     Logback.Classic % Test,
     ScalaTest % Test,
@@ -283,17 +207,10 @@ lazy val cassandra = project
   .in(file("cassandra"))
   .settings(name := "kafka-journal-cassandra")
   .settings(commonSettings)
-  .dependsOn(core, ScalaTestIO % Test)
+  .dependsOn(libs, core, ScalaTestIO % Test)
   .settings(
     libraryDependencies ++= Seq(
-      SCache,
-      SCassandra,
-      CassandraSync,
-    ),
-    libraryDependencies ++= crossSettings(
-      scalaVersion = scalaVersion.value,
-      if2 = Seq(),
-      if3 = Seq(Pureconfig.Scala3.Generic),
+      Pureconfig.Generic,
     ),
   )
 
@@ -316,24 +233,19 @@ lazy val circe = project
   .dependsOn(journal % "test->test;compile->compile")
   .settings(libraryDependencies ++= Seq(Circe.Core, Circe.Generic, Circe.Jawn))
 
-lazy val akkaPersistenceCirce = project
-  .in(file("akka/persistence-circe"))
-  .settings(name := "kafka-journal-akka-persistence-circe")
+lazy val persistenceCirce = project
+  .in(file("persistence-circe"))
+  .settings(name := "kafka-journal-persistence-circe")
   .settings(commonSettings)
-  .dependsOn(circe, akkaPersistence % "test->test;compile->compile")
-
-lazy val pekkoPersistenceCirce = project
-  .in(file("pekko/persistence-circe"))
-  .settings(name := "kafka-journal-pekko-persistence-circe")
-  .settings(commonSettings)
-  .dependsOn(circe, pekkoPersistence % "test->test;compile->compile")
+  .dependsOn(circe, persistence % "test->test;compile->compile")
 
 lazy val ScalaTestIO = project
   .in(file("scalatest-io"))
   .settings(name := "kafka-journal-scalatest-io")
   .settings(commonSettings)
+  .dependsOn(libs)
   .settings(publish / skip := true)
-  .settings(libraryDependencies ++= Seq(ScalaTest, Smetrics.SMetrics, CatsHelper, Cats.Core, Cats.Effect))
+  .settings(libraryDependencies ++= Seq(ScalaTest, Cats.Core, Cats.Effect))
 
 // not part of aggregate, tests can be run only manually
 lazy val benchmark = project
@@ -345,10 +257,3 @@ lazy val benchmark = project
     Jmh / classDirectory := (Test / classDirectory).value,
     Jmh / dependencyClasspath := (Test / dependencyClasspath).value,
   )
-
-def crossSettings[T](scalaVersion: String, if3: T, if2: T): T = {
-  scalaVersion match {
-    case version if version.startsWith("3") => if3
-    case _ => if2
-  }
-}

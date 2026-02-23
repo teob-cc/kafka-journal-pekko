@@ -106,7 +106,7 @@ private[journal] object SetupSchema {
 
     for {
       cassandraSync <- CassandraSync.of[F](config.keyspace, config.locksTable, origin)
-      ab <- createSchema(cassandraSync)
+      ab <- createSchema(using cassandraSync)
       (schema, fresh) = ab
       settings <- SettingsCassandra.of[F](schema.setting, origin, consistencyConfig)
       _ <- migrate(schema, fresh, settings, cassandraSync)

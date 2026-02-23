@@ -48,14 +48,14 @@ class SeqNrSpec extends AnyFunSuite with Matchers {
   }
 
   test("in") {
-    SeqNr.min in SeqRange(SeqNr.min, SeqNr.max) shouldEqual true
+    SeqNr.min.in(SeqRange(SeqNr.min, SeqNr.max)) shouldEqual true
   }
 
   test("to") {
-    SeqNr.min to SeqNr.max shouldEqual SeqRange(SeqNr.min, SeqNr.max)
+    (SeqNr.min).to(SeqNr.max) shouldEqual SeqRange(SeqNr.min, SeqNr.max)
   }
 
   test("to Min") {
-    SeqNr.min to SeqNr.min shouldEqual SeqRange(SeqNr.min)
+    (SeqNr.min).to(SeqNr.min) shouldEqual SeqRange(SeqNr.min)
   }
 }

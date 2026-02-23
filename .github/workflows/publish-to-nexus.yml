@@ -1,0 +1,133 @@
+name: Publish to Nexus
+
+on:
+  push:
+    branches: [ master ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (leave empty for auto-generated)'
+        required: false
+        type: string
+      environment:
+        description: 'Target environment (dev/cit/prod)'
+        required: true
+        default: cit
+        type: string
+      build_image_tag:
+        description: 'Build image tag'
+        required: false
+        type: string
+        default: 'latest'
+
+env:
+  HARBOR_REGISTRY: harbor.${{ inputs.environment || 'cit' }}.lh.jacum.com
+  HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+  HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+  NEXUS_REGISTRY: nexus-api.${{ inputs.environment || 'cit' }}.lh.jacum.com
+  NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+  NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+jobs:
+  publish:
+    runs-on:
+      - self-hosted
+      - ${{ inputs.environment || 'cit' }}
+
+    environment:
+      name: ${{ inputs.environment || 'cit' }}
+
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+
+      - name: Ensure sbt is available on PATH
+        run: |
+          echo "Checking sbt installation locations..."
+          if [ -x /usr/local/sbt/bin/sbt ]; then
+            echo "/usr/local/sbt/bin" >> "$GITHUB_PATH"
+            echo "Added /usr/local/sbt/bin to PATH"
+          elif [ -x /usr/local/bin/sbt ]; then
+            echo "/usr/local/bin" >> "$GITHUB_PATH"
+            echo "Added /usr/local/bin to PATH"
+          else
+            echo "sbt not found at /usr/local/sbt/bin or /usr/local/bin" >&2
+            echo "Diagnostics:"
+            ls -la /usr/local/sbt/bin 2>&1 || echo "/usr/local/sbt/bin not found"
+            ls -la /usr/local/bin 2>&1 || echo "/usr/local/bin not found"
+            exit 1
+          fi
+
+      - name: Diagnostic - Runner Environment
+        run: |
+          echo "=== Runner Environment ==="
+          echo "User: $(whoami)"
+          echo "Home: $HOME"
+          echo "PWD: $PWD"
+          echo "PATH: $PATH"
+          echo ""
+          echo "=== Available Tools ==="
+          which java || echo "java not found"
+          which scala || echo "scala not found"
+          which sbt || echo "sbt not found"
+          which docker || echo "docker not found"
+          echo ""
+          echo "=== Versions ==="
+          java -version 2>&1 || true
+          sbt --version 2>&1 || true
+          echo ""
+          echo "=== SBT Location Check ==="
+          ls -la /usr/local/sbt/bin/ 2>&1 || echo "/usr/local/sbt/bin not found"
+          ls -la /usr/local/bin/sbt 2>&1 || echo "/usr/local/bin/sbt not found"
+          find /usr/local -name sbt -type f 2>/dev/null || echo "sbt not found in /usr/local"
+          echo ""
+          echo "=== Runner Image ==="
+          cat /etc/os-release || true
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            # Ensure sbt is available on PATH for version determination
+            if [ -x /usr/local/sbt/bin/sbt ]; then
+              export PATH="/usr/local/sbt/bin:$PATH"
+            elif [ -x /usr/local/bin/sbt ]; then
+              export PATH="/usr/local/bin:$PATH"
+            fi
+
+            # Try to get version from sbt
+            VERSION=$(sbt --no-colors --error "print version" 2>/dev/null | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' | tail -n 1 | xargs)
+            if [ -z "$VERSION" ]; then
+              VERSION="0.1.0-SNAPSHOT"
+            fi
+          fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION"
+
+      - name: Run tests and publish
+        run: sbt "Test/compile; test; publish"
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
+          JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=85.0 -Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"
+
+      - name: Summary
+        run: |
+          echo "### Published to Nexus 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** https://nexus-api.${{ inputs.environment || 'cit' }}.lh.jacum.com" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY

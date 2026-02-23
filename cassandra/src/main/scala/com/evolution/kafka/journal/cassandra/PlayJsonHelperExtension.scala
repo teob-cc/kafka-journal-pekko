@@ -53,7 +53,7 @@ private[journal] object PlayJsonHelperExtension {
       decode
         .fromStr(str)
         .get
-        .as(reads) // TODO not use `as`
+        .as(using reads) // TODO not use `as`
     }
   }
 }

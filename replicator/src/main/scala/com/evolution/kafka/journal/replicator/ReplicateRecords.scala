@@ -47,8 +47,8 @@ private[journal] object ReplicateRecords {
           } yield {
             val timestamp1 = record.action.timestamp
             TopicReplicatorMetrics.Measurements(
-              replicationLatency = now diff timestamp1,
-              deliveryLatency = timestamp diff timestamp1,
+              replicationLatency = now.diff(timestamp1),
+              deliveryLatency = timestamp.diff(timestamp1),
               records = records,
             )
           }

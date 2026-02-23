@@ -31,8 +31,8 @@ object JsonCodec {
 
   def default[F[_]: ApplicativeThrowable: FromTry]: JsonCodec[F] = {
     JsonCodec(
-      encode = Encode.jsoniter[F] fallbackTo Encode.playJson,
-      decode = Decode.jsoniter[F] fallbackTo Decode.playJson,
+      encode = Encode.jsoniter[F].fallbackTo(Encode.playJson),
+      decode = Decode.jsoniter[F].fallbackTo(Decode.playJson),
     )
   }
 
@@ -160,7 +160,7 @@ object JsonCodec {
         F: MonadThrowable[F],
       ): F[JsValue] =
         for {
-          bytes <- ByteVector.encodeString(str)(StandardCharsets.UTF_8).liftTo[F]
+          bytes <- ByteVector.encodeString(str)(using StandardCharsets.UTF_8).liftTo[F]
           value <- self.fromBytes(bytes)
         } yield value
     }

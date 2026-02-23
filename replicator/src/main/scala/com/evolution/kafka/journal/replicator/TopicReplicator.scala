@@ -75,7 +75,7 @@ private[journal] object TopicReplicator {
   }
 
   private def topicLoggerOf[F[_]: LogOf: Monad](topic: Topic): F[Log[F]] = {
-    LogOf[F].apply(TopicReplicator.getClass).map(_ prefixed topic)
+    LogOf[F].apply(TopicReplicator.getClass).map(_.prefixed(topic))
   }
 
   def of[F[_]: Concurrent: Sleep: MeasureDuration, A](

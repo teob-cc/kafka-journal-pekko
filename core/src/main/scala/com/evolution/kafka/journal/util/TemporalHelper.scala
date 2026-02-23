@@ -9,23 +9,23 @@ import scala.concurrent.duration.*
 
 private[journal] object TemporalHelper {
 
-  implicit val instantOrdering: Ordering[Instant] = Ordering.fromLessThan(_ isBefore _)
+  implicit val instantOrdering: Ordering[Instant] = Ordering.fromLessThan(_.isBefore(_))
 
   implicit val instantOrder: Order[Instant] = Order.fromOrdering
 
-  implicit val localDateOrdering: Ordering[LocalDate] = Ordering.fromLessThan(_ isBefore _)
+  implicit val localDateOrdering: Ordering[LocalDate] = Ordering.fromLessThan(_.isBefore(_))
 
   implicit val localDateOrder: Order[LocalDate] = Order.fromOrdering
 
   implicit class TemporalOps[T <: Temporal](val self: T) extends AnyVal {
 
-    def +(duration: TemporalAmount): T = (self plus duration).asInstanceOf[T]
+    def +(duration: TemporalAmount): T = self.plus(duration).asInstanceOf[T]
 
     def +(duration: FiniteDuration): T = {
       self.plus(duration.length, duration.unit.chronoUnit).asInstanceOf[T]
     }
 
-    def -(duration: TemporalAmount): T = (self minus duration).asInstanceOf[T]
+    def -(duration: TemporalAmount): T = self.minus(duration).asInstanceOf[T]
 
     def -(duration: FiniteDuration): T = {
       self.minus(duration.length, duration.unit.chronoUnit).asInstanceOf[T]
@@ -51,6 +51,7 @@ private[journal] object TemporalHelper {
       case MILLISECONDS => ChronoUnit.MILLIS
       case MICROSECONDS => ChronoUnit.MICROS
       case NANOSECONDS => ChronoUnit.NANOS
+      case _           => throw new IllegalArgumentException(s"Unexpected TimeUnit: $self")
     }
   }
 }

@@ -55,7 +55,7 @@ object ActionHeader {
           (json \ name)
             .validate[JsObject]
             .asOpt
-            .map { _.validate(reads) }
+            .map { _.validate(using reads) }
         }
 
         read("append", appendFormat)
