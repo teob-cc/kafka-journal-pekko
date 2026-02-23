@@ -56,37 +56,37 @@ class SeqRangeSpec extends AnyFunSuite with Matchers {
   }
 
   test("contains") {
-    seqRange(1) contains seqRange(1) shouldEqual true
+    seqRange(1).contains(seqRange(1)) shouldEqual true
 
-    seqRange(1) contains seqRange(2) shouldEqual false
-    seqRange(2) contains seqRange(1) shouldEqual false
+    seqRange(1).contains(seqRange(2)) shouldEqual false
+    seqRange(2).contains(seqRange(1)) shouldEqual false
 
-    seqRange(1, 2) contains seqRange(1, 2) shouldEqual true
+    seqRange(1, 2).contains(seqRange(1, 2)) shouldEqual true
 
-    seqRange(1, 2) contains seqRange(2, 3) shouldEqual false
-    seqRange(1, 2) contains seqRange(3, 4) shouldEqual false
+    seqRange(1, 2).contains(seqRange(2, 3)) shouldEqual false
+    seqRange(1, 2).contains(seqRange(3, 4)) shouldEqual false
 
-    seqRange(2, 3) contains seqRange(1, 2) shouldEqual false
-    seqRange(3, 4) contains seqRange(1, 2) shouldEqual false
+    seqRange(2, 3).contains(seqRange(1, 2)) shouldEqual false
+    seqRange(3, 4).contains(seqRange(1, 2)) shouldEqual false
 
-    seqRange(1, 4) contains seqRange(2, 3) shouldEqual true
+    seqRange(1, 4).contains(seqRange(2, 3)) shouldEqual true
   }
 
   test("intersects") {
-    seqRange(1) intersects seqRange(1) shouldEqual true
+    seqRange(1).intersects(seqRange(1)) shouldEqual true
 
-    seqRange(1) intersects seqRange(2) shouldEqual false
-    seqRange(2) intersects seqRange(1) shouldEqual false
+    seqRange(1).intersects(seqRange(2)) shouldEqual false
+    seqRange(2).intersects(seqRange(1)) shouldEqual false
 
-    seqRange(1, 2) intersects seqRange(1, 2) shouldEqual true
+    seqRange(1, 2).intersects(seqRange(1, 2)) shouldEqual true
 
-    seqRange(1, 2) intersects seqRange(2, 3) shouldEqual true
-    seqRange(1, 2) intersects seqRange(3, 4) shouldEqual false
+    seqRange(1, 2).intersects(seqRange(2, 3)) shouldEqual true
+    seqRange(1, 2).intersects(seqRange(3, 4)) shouldEqual false
 
-    seqRange(2, 3) intersects seqRange(1, 2) shouldEqual true
-    seqRange(3, 4) intersects seqRange(1, 2) shouldEqual false
+    seqRange(2, 3).intersects(seqRange(1, 2)) shouldEqual true
+    seqRange(3, 4).intersects(seqRange(1, 2)) shouldEqual false
 
-    seqRange(1, 4) intersects seqRange(2, 3) shouldEqual true
-    seqRange(2, 3) intersects seqRange(1, 4) shouldEqual true
+    seqRange(1, 4).intersects(seqRange(2, 3)) shouldEqual true
+    seqRange(2, 3).intersects(seqRange(1, 4)) shouldEqual true
   }
 }

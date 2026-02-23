@@ -66,7 +66,7 @@ object SeqNr {
 
     def prev[F[_]: Applicative: Fail]: F[SeqNr] = map[F](_ - 1L)
 
-    def in(range: SeqRange): Boolean = range contains self
+    def in(range: SeqRange): Boolean = range.contains(self)
 
     def to(seqNr: SeqNr): SeqRange = SeqRange(self, seqNr)
 

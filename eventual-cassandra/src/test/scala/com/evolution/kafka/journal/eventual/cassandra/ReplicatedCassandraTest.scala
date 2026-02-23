@@ -2293,7 +2293,7 @@ object ReplicatedCassandraTest {
 
   implicit val syncStateT: Sync[StateT] = new Sync[StateT] with MonadCancelFromMonadError[StateT, Throwable] {
 
-    val F: MonadError[StateT, Throwable] = IndexedStateT.catsDataMonadErrorForIndexedStateT(catsStdInstancesForTry)
+    val F: MonadError[StateT, Throwable] = IndexedStateT.catsDataMonadErrorForIndexedStateT(using catsStdInstancesForTry)
 
     override def rootCancelScope: CancelScope = CancelScope.Uncancelable
 

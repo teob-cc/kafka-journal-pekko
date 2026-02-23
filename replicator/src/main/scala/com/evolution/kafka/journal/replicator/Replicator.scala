@@ -61,7 +61,7 @@ object Replicator {
     for {
       cassandraCluster <- CassandraCluster.make(config.cassandra.client, cassandraClusterOf, config.cassandra.retries)
       cassandraSession <- cassandraCluster.session
-      replicatedJournal <- replicatedJournal(cassandraCluster, cassandraSession).toResource
+      replicatedJournal <- replicatedJournal(using cassandraCluster, cassandraSession).toResource
       result <- make(config, metrics, replicatedJournal, hostName, ReplicatedOffsetNotifier.empty)
     } yield result
   }

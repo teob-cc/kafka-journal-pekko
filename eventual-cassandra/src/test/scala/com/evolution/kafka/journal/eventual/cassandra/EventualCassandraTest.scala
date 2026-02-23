@@ -562,7 +562,7 @@ object EventualCassandraTest {
       val stateT = StateT.success { state =>
         val entries = for {
           journal <- state.journal.get((key, segment)).toList
-          record <- journal.collect { case (_, entry) if entry.event.seqNr in range => entry }.toList
+          record <- journal.collect { case (_, entry) if entry.event.seqNr.in(range) => entry }.toList
         } yield {
           record
         }
@@ -584,7 +584,7 @@ object EventualCassandraTest {
         journalPointer = selectJournalPointer0,
         ids = selectIds0,
         segments = segments,
-      )(concurrentStateT)
+      )(using concurrentStateT)
 
     EventualCassandra.Statements(selectRecords, metaJournalStatements, selectOffset2)
   }

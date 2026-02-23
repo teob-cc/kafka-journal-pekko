@@ -110,7 +110,7 @@ trait EventualJournalSpec extends AnyWordSpec with Matchers {
       val partitionOffsetNext = pointerLast.fold(partitionOffsetOf(Offset.min))(_.partitionOffset.next)
       val seqNrsAll = {
         val end = pointerLast.fold(seqNr)(_.seqNr)
-        val seqNrs = (seqNr to end).toNel
+        val seqNrs = seqNr.to(end).toNel
         (SeqNr.min :: SeqNr.max :: seqNrs).distinct
       }
 

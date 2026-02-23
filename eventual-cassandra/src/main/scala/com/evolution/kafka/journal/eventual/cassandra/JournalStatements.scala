@@ -80,7 +80,7 @@ private[journal] object JournalStatements {
       implicit val encodeByNameByteVector: EncodeByName[ByteVector] = EncodeByName[Array[Byte]]
         .contramap { _.toArray }
 
-      val encodeByNameRecordMetadata = EncodeByName[RecordMetadata](RecordMetadataExtension.encodeByNameRecordMetadata)
+      val encodeByNameRecordMetadata = EncodeByName[RecordMetadata](using RecordMetadataExtension.encodeByNameRecordMetadata)
 
       val query =
         s"""
@@ -135,7 +135,7 @@ private[journal] object JournalStatements {
             .encodeSome("payload_type", payloadType)
             .encodeSome("payload_txt", txt)
             .encodeSome("payload_bin", bin)
-            .encode("metadata", record.event.metadata)(encodeByNameRecordMetadata)
+            .encode("metadata", record.event.metadata)(using encodeByNameRecordMetadata)
             .encode(record.event.headers)
             .setConsistencyLevel(consistencyConfig.value)
         }

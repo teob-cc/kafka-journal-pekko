@@ -395,7 +395,7 @@ object Journal {
         )(implicit
           kafkaWrite: KafkaWrite[G, A],
         ): G[PartitionOffset] = {
-          fg(self.append(events, metadata, headers)(kafkaWrite.mapK(gf)))
+          fg(self.append(events, metadata, headers)(using kafkaWrite.mapK(gf)))
         }
 
         def read[A](
@@ -404,7 +404,7 @@ object Journal {
           kafkaRead: KafkaRead[G, A],
           eventualRead: EventualRead[G, A],
         ): Stream[G, EventRecord[A]] =
-          self.read[A](from)(kafkaRead.mapK(gf), eventualRead.mapK(gf)).mapK(fg, gf)
+          self.read[A](from)(using kafkaRead.mapK(gf), eventualRead.mapK(gf)).mapK(fg, gf)
 
         def pointer: G[Option[SeqNr]] = fg(self.pointer)
 

@@ -75,9 +75,9 @@ class JournalSpec extends AnyWordSpec with Matchers {
               a <- journal.read(SeqRange.all)
               _ = a shouldEqual seqNrs
               last = seqNrLast getOrElse SeqNr.min
-              a <- journal.read(SeqNr.min to last)
+              a <- journal.read(SeqNr.min.to(last))
               _ = a shouldEqual seqNrs
-              a <- journal.read(SeqNr.min to last.next[Option].getOrElse(last))
+              a <- journal.read(SeqNr.min.to(last.next[Option].getOrElse(last)))
             } yield {
               a shouldEqual seqNrs
             }
@@ -185,7 +185,7 @@ class JournalSpec extends AnyWordSpec with Matchers {
           createAndAppend {
             case (journal, _) =>
               for {
-                seqNrs <- journal.read(seqNr to SeqNr.max)
+                seqNrs <- journal.read(seqNr.to(SeqNr.max))
               } yield {
                 seqNrs shouldEqual seqNrs.dropWhile(_ < seqNr)
               }

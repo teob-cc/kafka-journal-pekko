@@ -182,7 +182,7 @@ class BoundsTest extends AnyFunSuite with Matchers {
   test("Bounds(0, 1) contains 0") {
     val result = for {
       a <- Bounds.of[Try](0, 1)
-      _ <- Try { a contains 0 shouldEqual true }
+      _ <- Try { a.contains(0) shouldEqual true }
     } yield {}
     result shouldEqual ().pure[Try]
   }
@@ -190,7 +190,7 @@ class BoundsTest extends AnyFunSuite with Matchers {
   test("Bounds(0, 1) contains 1") {
     val result = for {
       a <- Bounds.of[Try](0, 1)
-      _ <- Try { a contains 1 shouldEqual true }
+      _ <- Try { a.contains(1) shouldEqual true }
     } yield {}
     result shouldEqual ().pure[Try]
   }
@@ -198,7 +198,7 @@ class BoundsTest extends AnyFunSuite with Matchers {
   test("Bounds(0, 1) contains 2") {
     val result = for {
       a <- Bounds.of[Try](0, 1)
-      _ <- Try { a contains 2 shouldEqual false }
+      _ <- Try { a.contains(2) shouldEqual false }
     } yield {}
     result shouldEqual ().pure[Try]
   }
@@ -206,7 +206,7 @@ class BoundsTest extends AnyFunSuite with Matchers {
   test("Bounds(1, 2) contains 0") {
     val result = for {
       a <- Bounds.of[Try](1, 2)
-      _ <- Try { a contains 0 shouldEqual false }
+      _ <- Try { a.contains(0) shouldEqual false }
     } yield {}
     result shouldEqual ().pure[Try]
   }

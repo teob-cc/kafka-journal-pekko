@@ -1,0 +1,373 @@
+package com.evolution.kafka.journal.pekko.persistence
+
+import cats.effect.*
+import cats.effect.unsafe.{IORuntime, IORuntimeConfig}
+import cats.syntax.all.*
+import com.evolution.kafka.journal.*
+import com.evolution.kafka.journal.pekko.OriginExtension
+import com.evolution.kafka.journal.util.CatsHelper.*
+import com.evolution.kafka.journal.util.PureConfigHelper.*
+import com.evolutiongaming.catshelper.*
+import com.evolutiongaming.catshelper.CatsHelper.*
+import com.evolutiongaming.retry.Retry.implicits.*
+import com.evolutiongaming.retry.{OnError, Strategy}
+import com.evolutiongaming.scassandra.CassandraClusterOf
+import com.typesafe.config.Config
+import org.apache.pekko.actor.ActorSystem
+import org.apache.pekko.persistence.journal.AsyncWriteJournal
+import org.apache.pekko.persistence.{AtomicWrite, PersistentRepr}
+import pureconfig.ConfigSource
+
+import scala.concurrent.duration.*
+import scala.concurrent.{Await, ExecutionContextExecutor, Future}
+import scala.util.Try
+
+/**
+ * Main entry point to Kafka Journal implementation.
+ *
+ * The users are not expected to instantiate it directly, but should enable the plugin in respective
+ * `application.conf` instead like this:
+ * {{{
+ * pekko.persistence.journal.plugin = "evolutiongaming.kafka-journal.persistence.journal"
+ * }}}
+ *
+ * This is achieved by having a special `reference.conf` file inside of the library JAR, which
+ * contains the required configuration understandable by Pekko Persistence.
+ *
+ * This is also possible to override the setting for specific persistence actors by overriding
+ * [[PersistentActor#journalPluginId]].
+ *
+ * In the cases, when the configuration provided by [[KafkaJournalConfig]] does not provide enough
+ * flexibility, it might be useful to extend [[KafkaJournal]] itself and then override the necessary
+ * methods such as [[KafkaJournal#adapterIO]] or [[KafkaJournal#metrics]].
+ * {{{
+ * class KafkaJournalCirce(config: Config) extends KafkaJournal(config) {
+ *   override def adapterIO: Resource[IO, JournalAdapter[IO]] =
+ *     adapterIO(customSerializer, customJournalReadWrite)
+ * }
+ * }}}
+ *
+ * In this case the custom implementation could be used to replace the original class by adding the
+ * following to `application.conf`:
+ * {{{
+ * evolutiongaming.kafka-journal.persistence.journal {
+ *   class = "com.evolution.kafka.journal.pekko.persistence.circe.KafkaJournalCirce"
+ * }
+ * }}}
+ *
+ * @param config
+ *   Contains configuration coming from `application.conf` file, including [[KafkaJournalConfig]]
+ *   parameters, and also selection of [[ToKey]] implementation. See the documentation for
+ *   appropriate classes for more details.
+ */
+class KafkaJournal(config: Config) extends AsyncWriteJournal { actor =>
+
+  implicit val system: ActorSystem = context.system
+  implicit val executor: ExecutionContextExecutor = context.dispatcher
+
+  private val (blocking, blockingShutdown) = IORuntime.createDefaultBlockingExecutionContext("kafka-journal-blocking")
+  private val (scheduler, schedulerShutdown) = IORuntime.createDefaultScheduler("kafka-journal-scheduler")
+  implicit val ioRuntime: IORuntime = IORuntime(
+    compute = executor,
+    blocking = blocking,
+    scheduler = scheduler,
+    shutdown = () => {
+      blockingShutdown()
+      schedulerShutdown()
+    },
+    config = IORuntimeConfig(),
+  )
+  implicit val toFuture: ToFuture[IO] = ToFuture.ioToFuture
+  implicit val fromFuture: FromFuture[IO] = FromFuture.lift[IO]
+  implicit val fromAttempt: FromAttempt[IO] = FromAttempt.lift[IO]
+  implicit val fromJsResult: FromJsResult[IO] = FromJsResult.lift[IO]
+
+  val adapter: Future[(JournalAdapter[Future], IO[Unit])] = {
+    adapterIO
+      .map { _.mapK(toFuture.toFunctionK, fromFuture.toFunctionK) }
+      .allocated
+      .toFuture
+  }
+
+  def logOf: Resource[IO, LogOf[IO]] = LogOfFromPekko[IO](system).pure[Resource[IO, *]]
+
+  def randomIdOf: Resource[IO, RandomIdOf[IO]] = RandomIdOf.uuid[IO].pure[Resource[IO, *]]
+
+  def measureDuration: Resource[IO, MeasureDuration[IO]] = MeasureDuration.fromClock(Clock[IO]).pure[Resource[IO, *]]
+
+  def toKey: Resource[IO, ToKey[IO]] = {
+    ToKey
+      .fromConfig[IO](config)
+      .pure[Resource[IO, *]]
+  }
+
+  def kafkaJournalConfig: IO[KafkaJournalConfig] = {
+    ConfigSource
+      .fromConfig(config)
+      .load[KafkaJournalConfig]
+      .liftTo[IO]
+  }
+
+  def origin: IO[Option[Origin]] = {
+
+    val hostName = Origin.hostName[IO]
+
+    def pekkoHost = OriginExtension.pekkoHost[IO](system)
+
+    def pekkoName = OriginExtension.pekkoName(system)
+
+    hostName
+      .toOptionT
+      .orElse(pekkoHost.toOptionT)
+      .orElse(pekkoName.some.toOptionT[IO])
+      .value
+  }
+
+  def serializer: Resource[IO, EventSerializer[IO, Payload]] = {
+    EventSerializer
+      .of[IO](system)
+      .toResource
+  }
+
+  def journalReadWrite(config: KafkaJournalConfig): IO[JournalReadWrite[IO, Payload]] = {
+    for {
+      jsonCodec <- jsonCodec(config)
+    } yield {
+      implicit val jsonCodec1: JsonCodec[IO] = jsonCodec
+      implicit val jsonCodecTry: JsonCodec[Try] = jsonCodec.mapK(ToTry.functionK)
+      JournalReadWrite.of[IO, Payload]
+    }
+  }
+
+  def metrics: Resource[IO, JournalAdapter.Metrics[IO]] = {
+    JournalAdapter
+      .Metrics
+      .empty[IO]
+      .pure[Resource[IO, *]]
+  }
+
+  def appendMetadataOf: Resource[IO, AppendMetadataOf[IO]] = {
+    AppendMetadataOf
+      .empty[IO]
+      .pure[Resource[IO, *]]
+  }
+
+  def batching(config: KafkaJournalConfig): Resource[IO, Batching[IO]] = {
+    Batching
+      .byNumberOfEvents[IO](config.maxEventsInBatch)
+      .pure[Resource[IO, *]]
+  }
+
+  def cassandraClusterOf: Resource[IO, CassandraClusterOf[IO]] = {
+    CassandraClusterOf
+      .of[IO]
+      .toResource
+  }
+
+  def jsonCodec(config: KafkaJournalConfig): IO[JsonCodec[IO]] = {
+    val codec: JsonCodec[IO] = config.jsonCodec match {
+      case KafkaJournalConfig.JsonCodec.Default => JsonCodec.default
+      case KafkaJournalConfig.JsonCodec.PlayJson => JsonCodec.playJson
+      case KafkaJournalConfig.JsonCodec.Jsoniter => JsonCodec.jsoniter
+    }
+    codec.pure[IO]
+  }
+
+  def adapterIO: Resource[IO, JournalAdapter[IO]] = {
+    for {
+      serializer <- serializer
+      config <- kafkaJournalConfig.toResource
+      journalReadWrite <- journalReadWrite(config).toResource
+      adapter <- adapterIO(config, serializer, journalReadWrite)
+    } yield adapter
+  }
+
+  def adapterIO[A](
+    serializer: EventSerializer[IO, A],
+    journalReadWrite: JournalReadWrite[IO, A],
+  ): Resource[IO, JournalAdapter[IO]] = {
+    for {
+      config <- kafkaJournalConfig.toResource
+      adapter <- adapterIO(config, serializer, journalReadWrite)
+    } yield adapter
+  }
+
+  def adapterIO[A](
+    config: KafkaJournalConfig,
+    serializer: EventSerializer[IO, A],
+    journalReadWrite: JournalReadWrite[IO, A],
+  ): Resource[IO, JournalAdapter[IO]] = {
+    for {
+      logOf <- logOf
+      log <- logOf(classOf[KafkaJournal]).toResource
+      _ <- log.debug(s"config: $config").toResource
+      pair <- Resource {
+        val build = for {
+          randomId <- randomIdOf
+          measureDuration <- measureDuration
+          toKey <- toKey
+          origin <- origin.toResource
+          appendMetadataOf <- appendMetadataOf
+          metrics <- metrics
+          batching <- batching(config)
+          cassandraClusterOf <- cassandraClusterOf
+          jsonCodec <- jsonCodec(config).toResource
+          pair <- adapterOfWithJournals(
+            toKey = toKey,
+            origin = origin,
+            serializer = serializer,
+            journalReadWrite = journalReadWrite,
+            config = config,
+            metrics = metrics,
+            appendMetadataOf = appendMetadataOf,
+            batching = batching,
+            log = log,
+            cassandraClusterOf = cassandraClusterOf,
+          )(using logOf = logOf, randomIdOf = randomId, measureDuration = measureDuration, jsonCodec = jsonCodec)
+        } yield pair
+        val strategy = Strategy
+          .fibonacci(100.millis)
+          .cap(config.startTimeout)
+        val onError: OnError[IO, Throwable] = { (error, status, decision) =>
+          {
+            decision match {
+              case OnError.Decision.Retry(delay) =>
+                log.warn(s"allocate failed, retrying in $delay, error: $error")
+
+              case OnError.Decision.GiveUp =>
+                val retries = status.retries
+                val duration = status.delay
+                log.error(s"allocate failed after $retries retries within $duration: $error", error)
+            }
+          }
+        }
+        build
+          .allocated
+          .retry(strategy, onError)
+          .timeout(config.startTimeout)
+          .map {
+            case (pair, release0) =>
+              val release = release0
+                .timeout(config.startTimeout)
+                .handleErrorWith { e => log.error(s"release failed with $e", e) }
+              (pair, release)
+          }
+      }
+      (adapter, journals) = pair
+      ref <- KafkaJournalsRef.actorSystemRef[IO](system).toResource
+      _ <- ref.set(KafkaJournalsRef(journals)).toResource
+    } yield adapter
+  }
+
+  def adapterOfWithJournals[A](
+    toKey: ToKey[IO],
+    origin: Option[Origin],
+    serializer: EventSerializer[IO, A],
+    journalReadWrite: JournalReadWrite[IO, A],
+    config: KafkaJournalConfig,
+    metrics: JournalAdapter.Metrics[IO],
+    appendMetadataOf: AppendMetadataOf[IO],
+    batching: Batching[IO],
+    log: Log[IO],
+    cassandraClusterOf: CassandraClusterOf[IO],
+  )(implicit
+    logOf: LogOf[IO],
+    randomIdOf: RandomIdOf[IO],
+    measureDuration: MeasureDuration[IO],
+    jsonCodec: JsonCodec[IO],
+  ): Resource[IO, (JournalAdapter[IO], Journals[IO])] = {
+
+    JournalAdapter.makeWithJournals[IO, A](
+      toKey = toKey,
+      origin = origin,
+      serializer = serializer,
+      journalReadWrite = journalReadWrite,
+      config = config,
+      metrics = metrics,
+      log = log,
+      batching = batching,
+      appendMetadataOf = appendMetadataOf,
+      cassandraClusterOf = cassandraClusterOf,
+    )
+  }
+
+  def adapterOf[A](
+    toKey: ToKey[IO],
+    origin: Option[Origin],
+    serializer: EventSerializer[IO, A],
+    journalReadWrite: JournalReadWrite[IO, A],
+    config: KafkaJournalConfig,
+    metrics: JournalAdapter.Metrics[IO],
+    appendMetadataOf: AppendMetadataOf[IO],
+    batching: Batching[IO],
+    log: Log[IO],
+    cassandraClusterOf: CassandraClusterOf[IO],
+  )(implicit
+    logOf: LogOf[IO],
+    randomIdOf: RandomIdOf[IO],
+    measureDuration: MeasureDuration[IO],
+    jsonCodec: JsonCodec[IO],
+  ): Resource[IO, JournalAdapter[IO]] = {
+
+    adapterOfWithJournals(
+      toKey = toKey,
+      origin = origin,
+      serializer = serializer,
+      journalReadWrite = journalReadWrite,
+      config = config,
+      metrics = metrics,
+      appendMetadataOf = appendMetadataOf,
+      batching = batching,
+      log = log,
+      cassandraClusterOf = cassandraClusterOf,
+    ).map { case (adapter, _) => adapter }
+  }
+
+  override def postStop(): Unit = {
+    val future = adapter.flatMap { case (_, release) => release.toFuture }
+    Await.result(future, 1.minute)
+    super.postStop()
+  }
+
+  def asyncWriteMessages(atomicWrites: Seq[AtomicWrite]): Future[Seq[Try[Unit]]] = {
+    adapter.flatMap { case (adapter, _) => adapter.write(atomicWrites) }
+  }
+
+  def asyncDeleteMessagesTo(persistenceId: PersistenceId, to: Long): Future[Unit] = {
+    SeqNr.opt(to) match {
+      case Some(to) => adapter.flatMap { case (adapter, _) => adapter.delete(persistenceId, to.toDeleteTo) }
+      case None => Future.unit
+    }
+  }
+
+  def asyncReplayMessages(
+    persistenceId: PersistenceId,
+    from: Long,
+    to: Long,
+    max: Long,
+  )(
+    f: PersistentRepr => Unit,
+  ): Future[Unit] = {
+    val seqNrFrom = SeqNr
+      .of[Option](from)
+      .getOrElse(SeqNr.min)
+    val seqNrTo = SeqNr
+      .of[Option](to)
+      .getOrElse(SeqNr.max)
+    val range = SeqRange(seqNrFrom, seqNrTo)
+    val f1 = (a: PersistentRepr) => Future.fromTry(Try { f(a) })
+    adapter.flatMap { case (adapter, _) => adapter.replay(persistenceId, range, max)(f1) }
+  }
+
+  def asyncReadHighestSequenceNr(persistenceId: PersistenceId, from: Long): Future[Long] = {
+    val seqNr = SeqNr
+      .of[Option](from)
+      .getOrElse(SeqNr.min)
+    adapter
+      .flatMap { case (adapter, _) => adapter.lastSeqNr(persistenceId, seqNr) }
+      .map {
+        case Some(seqNr) => seqNr.value
+        case None => from
+      }
+  }
+}

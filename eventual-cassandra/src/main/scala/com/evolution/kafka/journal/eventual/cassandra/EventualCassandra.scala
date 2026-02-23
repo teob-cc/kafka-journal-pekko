@@ -54,7 +54,7 @@ object EventualCassandra {
     for {
       cassandraCluster <- CassandraCluster.make[F](config.client, cassandraClusterOf, config.retries)
       cassandraSession <- cassandraCluster.session
-      journal <- journal(cassandraCluster, cassandraSession).toResource
+      journal <- journal(using cassandraCluster, cassandraSession).toResource
     } yield journal
   }
 

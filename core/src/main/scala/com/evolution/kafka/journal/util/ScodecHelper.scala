@@ -77,6 +77,6 @@ object ScodecHelper {
 
   implicit class ByteVectorOps(val self: ByteVector) extends AnyVal {
 
-    def decodeStr: Either[CharacterCodingException, String] = self.decodeString(StandardCharsets.UTF_8)
+    def decodeStr: Either[CharacterCodingException, String] = self.decodeString(using StandardCharsets.UTF_8)
   }
 }

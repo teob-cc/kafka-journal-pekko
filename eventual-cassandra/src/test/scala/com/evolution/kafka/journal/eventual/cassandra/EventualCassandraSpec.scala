@@ -120,7 +120,7 @@ object EventualCassandraSpec {
               val records = state.journal.records(key, segment)
               val result = records.foldWhileM[StateT, L, R](l) { (l, record) =>
                 val seqNr = record.event.event.seqNr
-                if (range contains seqNr) f(l, record)
+                if (range.contains(seqNr)) f(l, record)
                 else l.asLeft[R].pure[StateT]
               }
               (state, result)
