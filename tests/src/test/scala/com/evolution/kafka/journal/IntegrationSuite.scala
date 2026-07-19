@@ -23,6 +23,11 @@ object IntegrationSuite {
   // Kafka version: 4.0.0 is too new to be the main test version, 3.9.0 container doesn't start
   private val KafkaDockerImage = DockerImageName.parse("apache/kafka-native:3.8.1")
 
+  // When true, do not start testcontainers: Kafka-compatible and CQL-compatible servers are
+  // expected on localhost:9092/9042 already (e.g. `docker compose up -d --wait` — Redpanda + ScyllaDB).
+  // This is how the clone-platform e2e lane runs the suite; see docker-compose.yml.
+  private val ExternalServices = sys.env.get("KAFKA_JOURNAL_EXTERNAL_SERVICES").contains("true")
+
   def startF[F[_]: Async: LogOf: MeasureDuration: FromTry: ToTry: Fail](
     cassandraClusterOf: CassandraClusterOf[F],
   ): Resource[F, Unit] = {
@@ -83,7 +88,9 @@ object IntegrationSuite {
 
     for {
       log <- LogOf[F].apply(IntegrationSuite.getClass).toResource
-      _ <- cassandraContainer(log) both kafkaContainer(log) // start in parallel
+      _ <-
+        if (ExternalServices) log.info("using external services on localhost:9092/9042").toResource
+        else (cassandraContainer(log) both kafkaContainer(log)).void // start in parallel
       _ <- replicator(log)
     } yield {}
   }

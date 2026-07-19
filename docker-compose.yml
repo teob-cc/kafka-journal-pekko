@@ -1,0 +1,53 @@
+# Redpanda + ScyllaDB for local dev and the clone-platform integration tests.
+#
+# The integration suite (tests/) binds host ports 9092 (Kafka API) and 9042 (CQL)
+# statically. With KAFKA_JOURNAL_EXTERNAL_SERVICES=true the suite skips starting
+# its own testcontainers and uses these services instead:
+#
+#   docker compose up -d --wait
+#   KAFKA_JOURNAL_EXTERNAL_SERVICES=true sbt tests/test
+#
+# Same images/major versions as CI, cit and prod — one platform, four tiers.
+services:
+  redpanda:
+    image: redpandadata/redpanda:v25.1.1
+    container_name: kafka-journal-redpanda
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container # implies --overprovisioned + relaxed fsync/ballast for dev
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --kafka-addr=internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://redpanda:29092,external://localhost:9092
+    ports:
+      - "9092:9092" # host clients (sbt tests, kafka-journal defaults)
+      - "9644:9644" # admin API + /public_metrics
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health --exit-when-healthy || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  scylla:
+    image: scylladb/scylla:2025.1
+    container_name: kafka-journal-scylla
+    command: >-
+      --smp 1 --memory 1G --overprovisioned 1 --developer-mode 1
+    ports:
+      - "9042:9042" # CQL — kafka-journal's default contact point
+      - "9180:9180" # native Prometheus metrics
+    volumes:
+      - scylla_data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'SELECT release_version FROM system.local' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+volumes:
+  redpanda_data:
+  scylla_data:

@@ -26,6 +26,12 @@ import scala.concurrent.duration.*
 
 object AppendReplicateApp extends IOApp {
 
+  // Drill knobs (see the kafka-cassandra provisioning plan, spike step):
+  //   KJ_MODE = both (default) | append (producer only, replicator down) | replicate (replicator only, catch-up)
+  //   KJ_ID_PREFIX = prefix for entity ids, to separate drill phases on one topic
+  private val Mode: String = sys.env.getOrElse("KJ_MODE", "both")
+  private val IdPrefix: String = sys.env.getOrElse("KJ_ID_PREFIX", "")
+
   def run(args: List[String]): IO[ExitCode] = {
     import cats.effect.unsafe.implicits.global
 
@@ -96,7 +102,11 @@ object AppendReplicateApp extends IOApp {
       kafkaConsumerOf = KafkaConsumerOf[F]()
       kafkaProducerOf = KafkaProducerOf[F]()
       hostName <- HostName.of[F]().toResource
-      replicate <- replicator(hostName)(using kafkaConsumerOf)
+      // Replicator.make starts replication fibers on ALLOCATION (the yielded F[Unit] is a completion
+      // handle) — in append mode the resource must not be allocated at all for the replicator to be down
+      replicate <-
+        if (Mode == "append") Resource.pure[F, Option[F[Unit]]](none)
+        else replicator(hostName)(using kafkaConsumerOf).map(_.some)
       journal <- journal(kafkaJournalConfig.journal, hostName, log)(using kafkaConsumerOf, kafkaProducerOf)
     } yield {
       (journal, replicate)
@@ -104,7 +114,12 @@ object AppendReplicateApp extends IOApp {
 
     resource.use {
       case (journal, replicate) =>
-        Concurrent[F].race(append[F](topic, journal), replicate).void
+        (Mode, replicate) match {
+          case ("append", _) => append[F](topic, journal).void
+          case ("replicate", Some(replicate)) => replicate.void
+          case (_, Some(replicate)) => Concurrent[F].race(append[F](topic, journal), replicate).void
+          case (_, None) => append[F](topic, journal).void
+        }
     }
   }
 
@@ -138,6 +153,6 @@ object AppendReplicateApp extends IOApp {
 
     (0 to 10)
       .toList
-      .parFoldMap1 { id => append(id.toString) }
+      .parFoldMap1 { id => append(s"$IdPrefix$id") }
   }
 }
