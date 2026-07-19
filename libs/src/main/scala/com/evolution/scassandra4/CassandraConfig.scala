@@ -6,18 +6,18 @@ import com.evolution.scassandra4.util.ConfigReaderFromEnum
 import com.typesafe.config.Config
 import pureconfig.{ConfigCursor, ConfigReader, ConfigSource}
 
-/** Configuration for the driver 4 based client, keeping the HOCON schema of
-  * `com.evolutiongaming.scassandra.CassandraConfig` so that existing
-  * deployment configs keep working after a migration.
-  *
-  * The config is translated to driver 4's own configuration, see
-  * [[CreateDriverConfigLoader]] for the mapping and for the fields that have
-  * no driver 4 counterpart (`jmxReporting` and `metrics` among them — driver 4
-  * metrics require a registry and are not translated yet).
-  *
-  * If a cloud secure connect bundle is specified, the contact points and port
-  * settings will be ignored.
-  */
+/**
+ * Configuration for the driver 4 based client, keeping the HOCON schema of
+ * `com.evolutiongaming.scassandra.CassandraConfig` so that existing deployment configs keep working
+ * after a migration.
+ *
+ * The config is translated to driver 4's own configuration, see [[CreateDriverConfigLoader]] for
+ * the mapping and for the fields that have no driver 4 counterpart (`jmxReporting` and `metrics`
+ * among them — driver 4 metrics require a registry and are not translated yet).
+ *
+ * If a cloud secure connect bundle is specified, the contact points and port settings will be
+ * ignored.
+ */
 final case class CassandraConfig(
   name: String = "cluster",
   port: Int = 9042,
@@ -34,7 +34,10 @@ final case class CassandraConfig(
   logQueries: Boolean = false,
   jmxReporting: Boolean = false,
   cloudSecureConnectBundle: Option[CloudSecureConnectBundleConfig] = None,
-  metrics: Boolean = false
+  metrics: Boolean = false,
+  // fork addition, not in the upstream schema: when defined, installs
+  // NextHostRetryPolicy with this many retries after the initial attempt
+  retries: Option[Int] = None,
 )
 
 object CassandraConfig {
@@ -45,15 +48,15 @@ object CassandraConfig {
     ConfigReaderFromEnum(DefaultProtocolVersion.values())
 
   implicit val configReaderCassandraConfig: ConfigReader[CassandraConfig] = {
-    (cursor: ConfigCursor) => {
-      for {
-        cursor <- cursor.asObjectCursor
-      } yield {
-        fromConfig(cursor.objValue.toConfig, Default)
+    (cursor: ConfigCursor) =>
+      {
+        for {
+          cursor <- cursor.asObjectCursor
+        } yield {
+          fromConfig(cursor.objValue.toConfig, Default)
+        }
       }
-    }
   }
-
 
   def fromConfig(config: Config, default: => CassandraConfig): CassandraConfig = {
 
@@ -76,7 +79,8 @@ object CassandraConfig {
     val socket = get[SocketConfig]("socket") getOrElse default.socket
     val authentication = get[AuthenticationConfig]("authentication").toOption orElse default.authentication
     val loadBalancing = get[LoadBalancingConfig]("load-balancing").toOption orElse default.loadBalancing
-    val speculativeExecution = get[SpeculativeExecutionConfig]("speculative-execution").toOption orElse default.speculativeExecution
+    val speculativeExecution = get[SpeculativeExecutionConfig]("speculative-execution").toOption orElse
+      default.speculativeExecution
     val cloudSecureConnectBundle = get[CloudSecureConnectBundleConfig](
       "cloud-secure-connect-bundle",
     ).toOption orElse default.cloudSecureConnectBundle
@@ -97,6 +101,8 @@ object CassandraConfig {
       compression = get[Compression]("compression") getOrElse default.compression,
       logQueries = get[Boolean]("log-queries") getOrElse default.logQueries,
       jmxReporting = get[Boolean]("jmx-reporting") getOrElse default.jmxReporting,
-      metrics = get[Boolean]("metrics") getOrElse default.metrics)
+      metrics = get[Boolean]("metrics") getOrElse default.metrics,
+      retries = get[Int]("retries").toOption orElse default.retries,
+    )
   }
 }

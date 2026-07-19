@@ -19,14 +19,14 @@ object CreateCqlSessionBuilder {
     config.cloudSecureConnectBundle match {
       case Some(CloudSecureConnectBundleConfig.File(path)) =>
         builder.withCloudSecureConnectBundle(Paths.get(path))
-      case Some(CloudSecureConnectBundleConfig.Url(url))   =>
+      case Some(CloudSecureConnectBundleConfig.Url(url)) =>
         builder.withCloudSecureConnectBundle(new URL(url))
-      case None                                            =>
+      case None =>
         val contactPoints = config.contactPoints.map { contactPoint =>
           contactPoint.split(":").map(_.trim) match {
             case Array(host, port) => new InetSocketAddress(host, port.toInt)
-            case Array(host)       => new InetSocketAddress(host, config.port)
-            case _                 =>
+            case Array(host) => new InetSocketAddress(host, config.port)
+            case _ =>
               val msg = s"A contact point should be in form of [host:port] or [host], but is $contactPoint"
               throw new IllegalArgumentException(msg)
           }

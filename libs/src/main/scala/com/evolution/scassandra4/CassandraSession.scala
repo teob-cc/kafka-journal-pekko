@@ -10,7 +10,9 @@ import com.evolution.scassandra4.util.FromCompletionStage
 
 import scala.jdk.javaapi.OptionConverters
 
-/** See [[com.datastax.oss.driver.api.core.CqlSession]] */
+/**
+ * See [[com.datastax.oss.driver.api.core.CqlSession]]
+ */
 trait CassandraSession[F[_]] {
 
   def loggedKeyspace: F[Option[String]]
@@ -30,8 +32,10 @@ trait CassandraSession[F[_]] {
 
 object CassandraSession {
 
-  def apply[F[_]](implicit F: CassandraSession[F]): CassandraSession[F] = F
-
+  def apply[F[_]](
+    implicit
+    F: CassandraSession[F],
+  ): CassandraSession[F] = F
 
   def apply[F[_]: Sync: FromCompletionStage](session: CqlSession): CassandraSession[F] = {
 
@@ -70,7 +74,6 @@ object CassandraSession {
       }
     }
   }
-
 
   implicit class CassandraSessionOps[F[_]](val self: CassandraSession[F]) extends AnyVal {
 

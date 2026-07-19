@@ -11,8 +11,10 @@ trait CassandraClusterOf[F[_]] {
 
 object CassandraClusterOf {
 
-  def apply[F[_]](implicit F: CassandraClusterOf[F]): CassandraClusterOf[F] = F
-
+  def apply[F[_]](
+    implicit
+    F: CassandraClusterOf[F],
+  ): CassandraClusterOf[F] = F
 
   def of[F[_]: Sync: FromCompletionStage]: F[CassandraClusterOf[F]] = {
     for {

@@ -1,52 +1,56 @@
 package com.evolution.scassandra4
 
-import com.datastax.oss.driver.api.core.config.{DefaultDriverOption, DriverConfigLoader, ProgrammaticDriverConfigLoaderBuilder}
+import com.datastax.oss.driver.api.core.config.{
+  DefaultDriverOption,
+  DriverConfigLoader,
+  ProgrammaticDriverConfigLoaderBuilder,
+}
 
 import java.time.{Duration => DurationJ}
 import scala.concurrent.duration.FiniteDuration
 import scala.jdk.CollectionConverters._
 
-/** Translates [[CassandraConfig]] (the driver 3 era schema) into driver 4's
-  * own configuration.
-  *
-  * The mapping, driver 3 setting → driver 4 option:
-  *   - `protocol-version` → `advanced.protocol.version`
-  *   - `compression` → `advanced.protocol.compression`
-  *   - `query.consistency` → `basic.request.consistency`
-  *   - `query.serial-consistency` → `basic.request.serial-consistency`
-  *   - `query.fetch-size` → `basic.request.page-size`
-  *   - `query.default-idempotence` → `basic.request.default-idempotence`
-  *   - `query.metadata` → `advanced.metadata.schema.enabled` and
-  *     `advanced.metadata.token-map.enabled`
-  *   - `query.refresh-schema-interval` → `advanced.metadata.schema.debouncer.window`
-  *   - `query.max-pending-refresh-schema-requests` → `advanced.metadata.schema.debouncer.max-events`
-  *   - `query.refresh-node-list-interval` → `advanced.metadata.topology-event-debouncer.window`
-  *   - `query.max-pending-refresh-node-list-requests` → `advanced.metadata.topology-event-debouncer.max-events`
-  *   - `query.re-prepare-on-up` → `advanced.prepared-statements.reprepare-on-up.enabled`
-  *   - `query.prepare-on-all-hosts` → `advanced.prepared-statements.prepare-on-all-nodes`
-  *   - `reconnection` → `advanced.reconnection-policy` (`ExponentialReconnectionPolicy`)
-  *   - `socket.connect-timeout` → `advanced.connection.connect-timeout`
-  *   - `socket.read-timeout` → `basic.request.timeout`
-  *   - `socket.*` → `advanced.socket.*`
-  *   - `pooling` → `advanced.connection.pool.*.size`,
-  *     `advanced.connection.max-requests-per-connection`, `advanced.heartbeat.interval`
-  *   - `authentication` → `advanced.auth-provider` (`PlainTextAuthProvider`)
-  *   - `load-balancing.local-dc` → `basic.load-balancing-policy.local-datacenter`;
-  *     when absent or empty, `DcInferringLoadBalancingPolicy` is used instead
-  *   - `load-balancing.allow-remote-dcs-for-local-consistency-level` →
-  *     `advanced.load-balancing-policy.dc-failover.allow-for-local-consistency-levels`
-  *   - `speculative-execution` → `advanced.speculative-execution-policy`
-  *     (`ConstantSpeculativeExecutionPolicy`; driver 4's `max-executions`
-  *     includes the initial execution, hence the `+ 1`)
-  *   - `log-queries` → `advanced.request-tracker` (`RequestLogger`)
-  *
-  * Ignored, no driver 4 counterpart: `jmx-reporting`, `metrics` (driver 4
-  * metrics require a registry and are not translated yet),
-  * `query.refresh-node-interval`, `query.max-pending-refresh-node-requests`,
-  * `pooling.pool-timeout`, `pooling.idle-timeout`, `pooling.max-queue-size`,
-  * `pooling.*.new-connection-threshold`, `pooling.*.connections-per-host-min`,
-  * `pooling.remote.max-requests-per-connection`.
-  */
+/**
+ * Translates [[CassandraConfig]] (the driver 3 era schema) into driver 4's own configuration.
+ *
+ * The mapping, driver 3 setting → driver 4 option:
+ *   - `protocol-version` → `advanced.protocol.version`
+ *   - `compression` → `advanced.protocol.compression`
+ *   - `query.consistency` → `basic.request.consistency`
+ *   - `query.serial-consistency` → `basic.request.serial-consistency`
+ *   - `query.fetch-size` → `basic.request.page-size`
+ *   - `query.default-idempotence` → `basic.request.default-idempotence`
+ *   - `query.metadata` → `advanced.metadata.schema.enabled` and
+ *     `advanced.metadata.token-map.enabled`
+ *   - `query.refresh-schema-interval` → `advanced.metadata.schema.debouncer.window`
+ *   - `query.max-pending-refresh-schema-requests` → `advanced.metadata.schema.debouncer.max-events`
+ *   - `query.refresh-node-list-interval` → `advanced.metadata.topology-event-debouncer.window`
+ *   - `query.max-pending-refresh-node-list-requests` →
+ *     `advanced.metadata.topology-event-debouncer.max-events`
+ *   - `query.re-prepare-on-up` → `advanced.prepared-statements.reprepare-on-up.enabled`
+ *   - `query.prepare-on-all-hosts` → `advanced.prepared-statements.prepare-on-all-nodes`
+ *   - `reconnection` → `advanced.reconnection-policy` (`ExponentialReconnectionPolicy`)
+ *   - `socket.connect-timeout` → `advanced.connection.connect-timeout`
+ *   - `socket.read-timeout` → `basic.request.timeout`
+ *   - `socket.*` → `advanced.socket.*`
+ *   - `pooling` → `advanced.connection.pool.*.size`,
+ *     `advanced.connection.max-requests-per-connection`, `advanced.heartbeat.interval`
+ *   - `authentication` → `advanced.auth-provider` (`PlainTextAuthProvider`)
+ *   - `load-balancing.local-dc` → `basic.load-balancing-policy.local-datacenter`; when absent or
+ *     empty, `DcInferringLoadBalancingPolicy` is used instead
+ *   - `load-balancing.allow-remote-dcs-for-local-consistency-level` →
+ *     `advanced.load-balancing-policy.dc-failover.allow-for-local-consistency-levels`
+ *   - `speculative-execution` → `advanced.speculative-execution-policy`
+ *     (`ConstantSpeculativeExecutionPolicy`; driver 4's `max-executions` includes the initial
+ *     execution, hence the `+ 1`)
+ *   - `log-queries` → `advanced.request-tracker` (`RequestLogger`)
+ *
+ * Ignored, no driver 4 counterpart: `jmx-reporting`, `metrics` (driver 4 metrics require a registry
+ * and are not translated yet), `query.refresh-node-interval`,
+ * `query.max-pending-refresh-node-requests`, `pooling.pool-timeout`, `pooling.idle-timeout`,
+ * `pooling.max-queue-size`, `pooling.*.new-connection-threshold`,
+ * `pooling.*.connections-per-host-min`, `pooling.remote.max-requests-per-connection`.
+ */
 object CreateDriverConfigLoader {
 
   def apply(config: CassandraConfig, sessionName: String): DriverConfigLoader = {
@@ -86,7 +90,8 @@ object CreateDriverConfigLoader {
     val withSocket = {
       def set[A](
         builder: ProgrammaticDriverConfigLoaderBuilder,
-        value: Option[A])(
+        value: Option[A],
+      )(
         f: (ProgrammaticDriverConfigLoaderBuilder, A) => ProgrammaticDriverConfigLoaderBuilder,
       ) = {
         value.fold(builder) { value => f(builder, value) }
@@ -97,8 +102,12 @@ object CreateDriverConfigLoader {
       result = set(result, socket.reuseAddress) { (b, a) => b.withBoolean(DefaultDriverOption.SOCKET_REUSE_ADDRESS, a) }
       result = set(result, socket.soLinger) { (b, a) => b.withInt(DefaultDriverOption.SOCKET_LINGER_INTERVAL, a) }
       result = set(result, socket.tcpNoDelay) { (b, a) => b.withBoolean(DefaultDriverOption.SOCKET_TCP_NODELAY, a) }
-      result = set(result, socket.receiveBufferSize) { (b, a) => b.withInt(DefaultDriverOption.SOCKET_RECEIVE_BUFFER_SIZE, a) }
-      result = set(result, socket.sendBufferSize) { (b, a) => b.withInt(DefaultDriverOption.SOCKET_SEND_BUFFER_SIZE, a) }
+      result = set(result, socket.receiveBufferSize) { (b, a) =>
+        b.withInt(DefaultDriverOption.SOCKET_RECEIVE_BUFFER_SIZE, a)
+      }
+      result = set(result, socket.sendBufferSize) { (b, a) =>
+        b.withInt(DefaultDriverOption.SOCKET_SEND_BUFFER_SIZE, a)
+      }
       result
     }
 
@@ -108,7 +117,7 @@ object CreateDriverConfigLoader {
       }
       config.compression match {
         case Compression.None => withVersion
-        case compression      => withVersion.withString(DefaultDriverOption.PROTOCOL_COMPRESSION, compression.name)
+        case compression => withVersion.withString(DefaultDriverOption.PROTOCOL_COMPRESSION, compression.name)
       }
     }
 
@@ -125,13 +134,15 @@ object CreateDriverConfigLoader {
           .withString(DefaultDriverOption.LOAD_BALANCING_LOCAL_DATACENTER, loadBalancing.localDc)
           .withBoolean(
             DefaultDriverOption.LOAD_BALANCING_DC_FAILOVER_ALLOW_FOR_LOCAL_CONSISTENCY_LEVELS,
-            loadBalancing.allowRemoteDcsForLocalConsistencyLevel)
-      case _                                                     =>
+            loadBalancing.allowRemoteDcsForLocalConsistencyLevel,
+          )
+      case _ =>
         // the default load balancing policy of driver 4 refuses to start without
         // an explicit local datacenter, infer it from the contact points instead
         withAuthentication.withString(
           DefaultDriverOption.LOAD_BALANCING_POLICY_CLASS,
-          "DcInferringLoadBalancingPolicy")
+          "DcInferringLoadBalancingPolicy",
+        )
     }
 
     val withSpeculativeExecution = config.speculativeExecution.fold(withLoadBalancing) { speculativeExecution =>
@@ -152,6 +163,14 @@ object CreateDriverConfigLoader {
       }
     }
 
-    withLogQueries.build()
+    // fork addition: `retries` (not in the upstream schema) installs NextHostRetryPolicy,
+    // the driver 3 era per-statement retry behavior expressed as a driver 4 policy class
+    val withRetries = config.retries.fold(withLogQueries) { retries =>
+      withLogQueries
+        .withString(DefaultDriverOption.RETRY_POLICY_CLASS, classOf[NextHostRetryPolicy].getName)
+        .withInt(NextHostRetryPolicy.Retries, retries)
+    }
+
+    withRetries.build()
   }
 }

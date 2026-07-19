@@ -6,12 +6,13 @@ import pureconfig.ConfigReader
 import scala.concurrent.duration._
 
 /**
-  * Translated to driver 4's `ExponentialReconnectionPolicy`
-  * (`advanced.reconnection-policy`), see [[CreateDriverConfigLoader]].
-  */
+ * Translated to driver 4's `ExponentialReconnectionPolicy` (`advanced.reconnection-policy`), see
+ * [[CreateDriverConfigLoader]].
+ */
 final case class ReconnectionConfig(
   minDelay: FiniteDuration = 1.second,
-  maxDelay: FiniteDuration = 10.minutes)
+  maxDelay: FiniteDuration = 10.minutes,
+)
 
 object ReconnectionConfig {
 
@@ -27,7 +28,7 @@ object ReconnectionConfig {
         maxDelay <- objCur.getAtOpt[FiniteDuration]("max-delay").map(_.getOrElse(defaultConfig.maxDelay))
       } yield ReconnectionConfig(
         minDelay = minDelay,
-        maxDelay = maxDelay
+        maxDelay = maxDelay,
       )
     }
 }

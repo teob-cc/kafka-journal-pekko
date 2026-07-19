@@ -13,22 +13,25 @@ object ToCql {
     def contramap[A, B](fa: ToCql[A])(f: B => A) = fa.contramap(f)
   }
 
-  def apply[A](implicit toCql: ToCql[A]): ToCql[A] = toCql
+  def apply[A](
+    implicit
+    toCql: ToCql[A],
+  ): ToCql[A] = toCql
 
   def apply[A: ToCql](a: A): String = ToCql[A].apply(a)
 
-
   implicit val strToCql: ToCql[String] = (a: String) => a
-
 
   object implicits {
 
     implicit class IdOpsToCql[A](val self: A) extends AnyVal {
 
-      def toCql(implicit toCql: ToCql[A]): String = ToCql(self)
+      def toCql(
+        implicit
+        toCql: ToCql[A],
+      ): String = ToCql(self)
     }
   }
-
 
   implicit class ToCqlOps[A](val self: ToCql[A]) extends AnyVal {
 
