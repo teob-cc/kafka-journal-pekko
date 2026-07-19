@@ -1,6 +1,6 @@
 # Cassandra java-driver 3 → 4 migration: what was done
 
-**Date:** 2026-07-19. **Status:** done — plan was `DRIVER4_PLAN.md`, executed as written with the deviations noted below. The fork now rides `org.apache.cassandra:java-driver-core:4.19.0` exclusively; the EOL DataStax 3.11.5 driver and the driver-3 vendored scassandra (43 files) are gone.
+**Date:** 2026-07-19. **Status:** done — the plan (`DRIVER4_PLAN.md`, removed after execution; see git history) was executed as written with the deviations noted below. The fork now rides `org.apache.cassandra:java-driver-core:4.19.0` exclusively; the EOL DataStax 3.11.5 driver and the driver-3 vendored scassandra (43 files) are gone. Why we migrated: 3.x is the EOL DataStax line, maintenance-only since 2023 — no fixes, no protocol v5, a dead end for driver-level features.
 
 ## Source of the driver-4 wrapper
 
@@ -26,10 +26,10 @@
 ## Validation
 
 - Full unit suite green (`sbt testUnit`, all modules).
-- **`IntegrationSuite` 149/149 (20 ignored) against Redpanda v25.1.1 + Scylla 2025.1** (external-services mode, fresh volumes) — run twice: once with both drivers on the classpath (step 5), once after the driver-3 drop (step 6). Covers `SetupSchema` migrations, the `metajournal_created_date_idx` secondary index, cassandra-sync LWT locks, fetchSize-bounded paging, and the in-suite replicator — i.e. the §risk table of the plan, now on driver 4 **against the clone platform** (the plan's "no ScyllaDB validation" non-goal was overtaken by the clone-platform decision; validation on Scylla is now the default via compose).
+- **`IntegrationSuite` 149/149 (20 ignored) against Redpanda v25.1.1 + Scylla 2025.1** (external-services mode, fresh volumes) — run twice: once with both drivers on the classpath, once after the driver-3 drop. Covers `SetupSchema` migrations, the `metajournal_created_date_idx` secondary index, cassandra-sync LWT locks, fetchSize-bounded paging, and the in-suite replicator — every behavioral risk the plan flagged, now on driver 4 **against the clone platform** (the plan scoped Scylla validation out; the clone-platform decision made it the default via compose).
 
 ## Not yet done (follow-ups)
 
-1. **Node-down retry parity drill** (plan G1 parity test): single-node compose can't exercise next-host semantics meaningfully; verify behavior during the cit soak or a multi-node testcontainers setup.
-2. **Pooling/heartbeat defaults** differ in driver 4 — watch long-lived replicator sessions during the cit soak (plan risk table, last row).
+1. **Node-down retry parity drill**: single-node compose can't exercise next-host semantics meaningfully; verify `NextHostRetryPolicy` behavior during the cit soak or a multi-node testcontainers setup.
+2. **Pooling/heartbeat defaults** differ in driver 4 — watch long-lived replicator sessions during the cit soak.
 3. **Driver metrics** are not translated (`metrics`/`jmx-reporting` config keys ignored, as upstream documented) — revisit if we want driver-level metrics in the §10 dashboards.
