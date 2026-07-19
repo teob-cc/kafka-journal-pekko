@@ -1,12 +1,13 @@
 package com.evolutiongaming.scassandra
 
-import cats.effect.implicits._
+import cats.effect.implicits.*
 import cats.effect.{Async, Sync}
-import cats.syntax.all._
-import com.datastax.driver.core._
+import cats.syntax.all.*
+import com.datastax.driver.core.*
 import com.evolutiongaming.scassandra.util.FromGFuture
-import com.evolutiongaming.sstream.FoldWhile._
+import com.evolutiongaming.sstream.FoldWhile.*
 import com.evolutiongaming.sstream.Stream
+
 import scala.annotation.nowarn
 import scala.language.implicitConversions
 
@@ -24,10 +25,10 @@ object syntax {
 
       new Stream[F, Row] {
 
-        def foldWhileM[L, R](l: L)(f: (L, Row) => F[Either[L, R]]) = {
+        def foldWhileM[L, R](l: L)(f: (L, Row) => F[Either[L, R]]): F[Either[L, R]] = {
 
           l.tailRecM[F, Either[L, R]] { l =>
-            def apply(rows: List[Row]) = {
+            def apply(rows: List[Row]): F[Either[L, Either[L, R]]] = {
               for {
                 result <- rows.foldWhileM(l)(f)
               } yield {
@@ -35,7 +36,7 @@ object syntax {
               }
             }
 
-            def fetchAndApply(rows: List[Row]) = {
+            def fetchAndApply(rows: List[Row]): F[Either[L, Either[L, R]]] = {
               for {
                 fetching <- fetch.start
                 result <- rows.foldWhileM(l)(f)
@@ -59,54 +60,103 @@ object syntax {
   }
 
   implicit class ScassandraSettableDataOps[A <: SettableData[A]](val self: A)
-      extends AnyVal {
+  extends AnyVal {
 
-    def encode[B](name: String, value: B)(implicit
-        encode: EncodeByName[B]
+    def encode[B](
+      name: String,
+      value: B,
+    )(implicit
+      encode: EncodeByName[B],
     ): A = {
       encode(self, name, value)
     }
 
-    def encode[B](value: B)(implicit encode: EncodeRow[B]): A = {
+    def encode[B](
+      value: B,
+    )(implicit
+      encode: EncodeRow[B],
+    ): A = {
       encode(self, value)
     }
 
-    def encodeAt[B](idx: Int, value: B)(implicit encode: EncodeByIdx[B]): A = {
+    def encodeAt[B](
+      idx: Int,
+      value: B,
+    )(implicit
+      encode: EncodeByIdx[B],
+    ): A = {
       encode(self, idx, value)
     }
 
-    def encodeSome[B](name: String, value: Option[B])(implicit
-        encode: EncodeByName[B]
+    def encodeSome[B](
+      name: String,
+      value: Option[B],
+    )(implicit
+      encode: EncodeByName[B],
     ): A = {
       value.fold(self)(encode(self, name, _))
     }
 
-    def encodeSome[B](value: Option[B])(implicit encode: EncodeRow[B]): A = {
+    def encodeSome[B](
+      value: Option[B],
+    )(implicit
+      encode: EncodeRow[B],
+    ): A = {
       value.fold(self)(encode(self, _))
     }
   }
 
-  implicit class ScassandraGettableByNameDataOps(val self: GettableByNameData)
-      extends AnyVal {
+  implicit class ScassandraGettableByNameDataOps(
+    val self: GettableByNameData,
+  ) extends AnyVal {
 
-    def decode[A](name: String)(implicit decode: DecodeByName[A]): A = {
+    def decode[A](
+      name: String,
+    )(implicit
+      decode: DecodeByName[A],
+    ): A = {
       decode(self, name)
     }
 
-    def decode[A](implicit decode: DecodeRow[A]): A = {
+    def decode[A](
+      implicit
+      decode: DecodeRow[A],
+    ): A = {
       decode(self)
     }
   }
 
-  implicit class ScassandraGettableByIdxDataOps(val self: GettableByIndexData)
-      extends AnyVal {
+  implicit class ScassandraGettableByIdxDataOps(
+    val self: GettableByIndexData,
+  ) extends AnyVal {
 
-    def decodeAt[A](idx: Int)(implicit decode: DecodeByIdx[A]): A = {
+    def decodeAt[A](
+      idx: Int,
+    )(implicit
+      decode: DecodeByIdx[A],
+    ): A = {
       decode(self, idx)
     }
   }
 
-  @nowarn("msg=deprecated")
+  /*
+  TODO: sort this out
+  
+  migesok:
+  ToCql.Ops & ToCql.Ops.IdOps deprecated in "improve ToCql Yaroslav Klymko 2019-10-28, 00:53"
+  but still used in syntax.toCqlOps which is not deprecated.
+  Replaced with ToCql.implicits.* which is not used in any of our code.
+  
+  Scala 2.13 for some reason doesn't generate deprecation warning for syntax.toCqlOps
+  but Scala 3 does.
+
+  All the production code still uses com.evolutiongaming.scassandra.syntax.*.
+
+  For better ergonomics and following existing usage, it is proposed to keep toCql syntax in
+  com.evolutiongaming.scassandra.syntax.*, undeprecate related classes
+  and deprecate the unused alternative (com.evolutiongaming.scassandra.ToCql.implicits.*).
+   */
+  @nowarn("cat=deprecation")
   implicit def toCqlOps[A](a: A): ToCql.Ops.IdOps[A] = new ToCql.Ops.IdOps(a)
 
   implicit class ScassandraStatementOps(val self: Statement) extends AnyVal {
@@ -119,15 +169,29 @@ object syntax {
 
   implicit class ScassandraUpdateSyntax[D <: GettableData & SettableData[D]](val data: D) extends AnyVal {
 
-    def update[A](value: A)(implicit update: UpdateRow[A]): D = {
+    def update[A](
+      value: A,
+    )(implicit
+      update: UpdateRow[A],
+    ): D = {
       update(data, value)
     }
 
-    def update[A](name: String, value: A)(implicit update: UpdateByName[A]): D = {
+    def update[A](
+      name: String,
+      value: A,
+    )(implicit
+      update: UpdateByName[A],
+    ): D = {
       update(data, name, value)
     }
 
-    def updateAt[A](idx: Int, value: A)(implicit update: UpdateByIdx[A]): D = {
+    def updateAt[A](
+      idx: Int,
+      value: A,
+    )(implicit
+      update: UpdateByIdx[A],
+    ): D = {
       update(data, idx, value)
     }
 

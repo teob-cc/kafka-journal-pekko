@@ -1,7 +1,7 @@
 package com.evolutiongaming.skafka
 
 import com.evolutiongaming.config.ConfigHelper.ConfigOps
-import com.evolutiongaming.skafka.ConfigHelpers._
+import com.evolutiongaming.skafka.ConfigHelpers.*
 import com.typesafe.config.{ConfigException, ConfigObject, ConfigValue}
 
 import scala.util.{Failure, Success, Try}
@@ -18,11 +18,12 @@ object JaasConfig {
     override def asString(): String = entry
   }
 
-  final case class Structured(loginModuleClass: Class[?], controlFlag: String, options: Map[String, String]) extends JaasConfig {
+  final case class Structured(loginModuleClass: Class[?], controlFlag: String, options: Map[String, String])
+  extends JaasConfig {
 
-    override def asString(): String = s"${loginModuleClass.getName} $controlFlag ${optionsAsString()}"
+    override def asString(): String = s"${ loginModuleClass.getName } $controlFlag ${ optionsAsString() }"
 
-    private def optionsAsString() =
+    private def optionsAsString(): String =
       options
         .map { case (key, value) => s"$key='$value'" }
         .mkString("", " ", ";")
@@ -33,8 +34,8 @@ object JaasConfig {
       val config = obj.toConfig
       for {
         loginModuleClass <- config.getOpt[Class[?]]("login-module-class")
-        controlFlag      <- config.getOpt[String]("control-flag")
-        options          <- config.getOpt[Map[String, String]]("options")
+        controlFlag <- config.getOpt[String]("control-flag")
+        options <- config.getOpt[Map[String, String]]("options")
       } yield new Structured(loginModuleClass, controlFlag, options)
     }
   }
@@ -43,16 +44,16 @@ object JaasConfig {
 
     val value = config.atPath(emptyPath)
 
-    def getPlain = Try(value.getString(emptyPath)) match {
+    def getPlain: Option[Plain] = Try(value.getString(emptyPath)) match {
       case Failure(_: ConfigException.WrongType) => None
-      case Failure(exception)                    => throw exception
-      case Success(string)                       => Some(Plain(string))
+      case Failure(exception) => throw exception
+      case Success(string) => Some(Plain(string))
     }
 
-    def getStructured = Try(value.getObject(emptyPath)) match {
+    def getStructured: Option[Structured] = Try(value.getObject(emptyPath)) match {
       case Failure(_: ConfigException.WrongType) => None
-      case Failure(exception)                    => throw exception
-      case Success(obj)                          => Structured.fromConfig(obj)
+      case Failure(exception) => throw exception
+      case Success(obj) => Structured.fromConfig(obj)
     }
 
     getPlain.orElse(getStructured) match {
@@ -61,7 +62,7 @@ object JaasConfig {
         throw new ConfigException.BadValue(
           value.origin(),
           emptyPath,
-          "Unexpected format of JAAS. Should be string or object"
+          "Unexpected format of JAAS. Should be string or object",
         )
     }
   }

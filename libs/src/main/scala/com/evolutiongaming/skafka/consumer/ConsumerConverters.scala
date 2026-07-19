@@ -1,31 +1,29 @@
 package com.evolutiongaming.skafka.consumer
 
-import java.lang.{Long => LongJ}
-import java.time.Instant
-import java.util.{Collection => CollectionJ, Map => MapJ}
-
-import cats.data.{NonEmptyList => Nel, NonEmptyMap => Nem, NonEmptySet => Nes}
-import cats.effect.Concurrent
-import cats.implicits._
-import com.evolutiongaming.catshelper.CatsHelper._
-import com.evolutiongaming.catshelper.DataHelper._
-import com.evolutiongaming.catshelper._
-import com.evolutiongaming.skafka.Converters._
-import com.evolutiongaming.skafka._
+import cats.data.{NonEmptyList as Nel, NonEmptyMap as Nem, NonEmptySet as Nes}
+import cats.implicits.*
+import com.evolutiongaming.catshelper.*
+import com.evolutiongaming.catshelper.DataHelper.*
+import com.evolutiongaming.skafka.*
+import com.evolutiongaming.skafka.Converters.*
 import org.apache.kafka.clients.consumer.{
-  Consumer => ConsumerJ,
-  ConsumerGroupMetadata => ConsumerGroupMetadataJ,
-  ConsumerRebalanceListener => RebalanceListenerJ,
-  ConsumerRecord => ConsumerRecordJ,
-  ConsumerRecords => ConsumerRecordsJ,
-  OffsetAndMetadata => OffsetAndMetadataJ,
-  OffsetAndTimestamp => OffsetAndTimestampJ
+  Consumer as ConsumerJ,
+  ConsumerGroupMetadata as ConsumerGroupMetadataJ,
+  ConsumerRebalanceListener as RebalanceListenerJ,
+  ConsumerRecord as ConsumerRecordJ,
+  ConsumerRecords as ConsumerRecordsJ,
+  OffsetAndMetadata as OffsetAndMetadataJ,
+  OffsetAndTimestamp as OffsetAndTimestampJ,
 }
+import org.apache.kafka.common.TopicPartition as TopicPartitionJ
 import org.apache.kafka.common.header.internals.RecordHeaders
-import org.apache.kafka.common.record.{TimestampType => TimestampTypeJ}
-import org.apache.kafka.common.{TopicPartition => TopicPartitionJ}
+import org.apache.kafka.common.record.TimestampType as TimestampTypeJ
 
-import scala.jdk.CollectionConverters._
+import java.lang.Long as LongJ
+import java.time.Instant
+import java.util.{Collection as CollectionJ, Map as MapJ}
+import scala.annotation.nowarn
+import scala.jdk.CollectionConverters.*
 import scala.util.Try
 
 object ConsumerConverters {
@@ -46,76 +44,33 @@ object ConsumerConverters {
     def asJava: OffsetAndTimestampJ = new OffsetAndTimestampJ(self.offset.value, self.timestamp.toEpochMilli)
   }
 
-  implicit class RebalanceListenerOps[F[_]](val self: RebalanceListener[F]) extends AnyVal {
-
-    def asJava(
-      serialListeners: SerialListeners[F]
-    )(implicit F: Concurrent[F], toTry: ToTry[F], toFuture: ToFuture[F]): RebalanceListenerJ = {
-
-      def onPartitions(
-        partitions: CollectionJ[TopicPartitionJ],
-        call: Nes[TopicPartition] => F[Unit]
-      ): Unit = {
-        // The whole callback runs partly on the consumer thread, and partly asynchronously.
-        // First, on the consumer thread, we pre-process the partition list, and register
-        // our listener in `serialListeners`.
-        // Then, asynchronously, we execute the registered listener.
-        partitions.asScala
-          .toList
-          // Note: `traverse(_.asScala[F])` may cause StackOverflowError later, when executed
-          // synchronously with `.toTry`. Traversing into `Try` directly avoids this.
-          .traverse(_.asScala[Try])
-          .flatMap { topicPartitions =>
-            topicPartitions
-              .toSortedSet
-              .toNes
-              .traverse { partitions => serialListeners.listener(call(partitions)) }
-              .toTry
-          }
-          // If we fail to register the listener, fail right now on the consumer thread.
-          .get
-          // Schedule the actual callback for async execution with `.toFuture`.
-          .sequence_
-          .toFuture
-        ()
-      }
-
-      new RebalanceListenerJ {
-
-        def onPartitionsAssigned(partitions: CollectionJ[TopicPartitionJ]) = {
-          onPartitions(partitions, self.onPartitionsAssigned)
-        }
-
-        def onPartitionsRevoked(partitions: CollectionJ[TopicPartitionJ]) = {
-          onPartitions(partitions, self.onPartitionsRevoked)
-        }
-
-        override def onPartitionsLost(partitions: CollectionJ[TopicPartitionJ]) = {
-          onPartitions(partitions, self.onPartitionsLost)
-        }
-      }
-    }
-  }
-
   implicit class RebalanceListener1Ops[F[_]](val self: RebalanceListener1[F]) extends AnyVal {
 
-    def asJava(consumer: ConsumerJ[?, ?])(implicit F: Concurrent[F], toTry: ToTry[F]): RebalanceListenerJ = {
+    def asJava(
+      consumer: ConsumerJ[?, ?],
+    )(implicit
+      toTry: ToTry[F],
+    ): RebalanceListenerJ = {
+
+      val rebalanceConsumer = RebalanceConsumer(consumer)
 
       def onPartitions(
         partitions: CollectionJ[TopicPartitionJ],
-        call: Nes[TopicPartition] => RebalanceCallback[F, Unit]
+        call: Nes[TopicPartition] => RebalanceCallback[F, Unit],
       ): Unit = {
         // If you're thinking about deriving ToTry timeout based on ConsumerConfig.maxPollInterval
         // please have a look on https://github.com/evolution-gaming/skafka/issues/125
-        partitions.asScala
+        partitions
+          .asScala
           .toList
           // Note: `traverse(_.asScala[F])` may cause StackOverflowError later, when executed
           // synchronously with `.toTry`. Traversing into `Try` directly avoids this.
           .traverse { _.asScala[Try] }
           .flatMap { topicPartitions =>
-            topicPartitions.toSortedSet
+            topicPartitions
+              .toSortedSet
               .toNes
-              .traverse_ { partitions => call(partitions).run(RebalanceConsumer(consumer)) }
+              .traverse_ { partitions => call(partitions).run(rebalanceConsumer) }
           }
           // If we fail to make a `call(..).run(..)`, fail right now on the consumer thread.
           .get
@@ -145,18 +100,18 @@ object ConsumerConverters {
       val headers = self.headers().asScala.map(_.asScala).toList
 
       val timestampAndType = {
-        def some(timestampType: TimestampType) = {
+        def some(timestampType: TimestampType): Some[TimestampAndType] = {
           Some(TimestampAndType(Instant.ofEpochMilli(self.timestamp()), timestampType))
         }
 
         self.timestampType() match {
           case TimestampTypeJ.NO_TIMESTAMP_TYPE => None
-          case TimestampTypeJ.CREATE_TIME       => some(TimestampType.create)
-          case TimestampTypeJ.LOG_APPEND_TIME   => some(TimestampType.append)
+          case TimestampTypeJ.CREATE_TIME => some(TimestampType.create)
+          case TimestampTypeJ.LOG_APPEND_TIME => some(TimestampType.append)
         }
       }
 
-      def withSize[A](value: A, size: Int) = {
+      def withSize[A](value: A, size: Int): Option[WithSize[A]] = {
         for {
           value <- Option(value)
         } yield WithSize(value, size)
@@ -164,15 +119,15 @@ object ConsumerConverters {
 
       for {
         partition <- Partition.of[F](self.partition())
-        offset    <- Offset.of[F](self.offset())
+        offset <- Offset.of[F](self.offset())
       } yield {
         ConsumerRecord(
-          topicPartition   = TopicPartition(self.topic(), partition),
-          offset           = offset,
+          topicPartition = TopicPartition(self.topic(), partition),
+          offset = offset,
           timestampAndType = timestampAndType,
-          key              = withSize(self.key(), self.serializedKeySize),
-          value            = withSize(self.value(), self.serializedValueSize()),
-          headers          = headers
+          key = withSize(self.key(), self.serializedKeySize),
+          value = withSize(self.value(), self.serializedValueSize()),
+          headers = headers,
         )
       }
     }
@@ -204,7 +159,7 @@ object ConsumerConverters {
         self.key.map(_.value) getOrElse null.asInstanceOf[K],
         self.value.map(_.value) getOrElse null.asInstanceOf[V],
         new RecordHeaders(headers),
-        Option.empty[Integer].toOptional
+        Option.empty[Integer].toOptional,
       )
     }
   }
@@ -236,23 +191,24 @@ object ConsumerConverters {
 
     def asScala: ConsumerGroupMetadata = {
       ConsumerGroupMetadata(
-        groupId         = self.groupId(),
-        generationId    = self.generationId(),
-        memberId        = self.memberId(),
-        groupInstanceId = self.groupInstanceId().toOption
+        groupId = self.groupId(),
+        generationId = self.generationId(),
+        memberId = self.memberId(),
+        groupInstanceId = self.groupInstanceId().toOption,
       )
     }
   }
 
   implicit class ConsumerGroupMetadataOps(val self: ConsumerGroupMetadata) extends AnyVal {
 
+    @nowarn("cat=deprecation")
     def asJava: ConsumerGroupMetadataJ = {
       new ConsumerGroupMetadataJ(self.groupId, self.generationId, self.memberId, self.groupInstanceId.toOptional)
     }
   }
 
   def offsetsAndTimestampsMapF[F[_]: MonadThrowable](
-    mapJ: MapJ[TopicPartitionJ, OffsetAndTimestampJ]
+    mapJ: MapJ[TopicPartitionJ, OffsetAndTimestampJ],
   ): F[Map[TopicPartition, Option[OffsetAndTimestamp]]] = {
     mapJ.asScalaMap(_.asScala[F], v => Option(v).traverse { _.asScala[F] }, keepNullValues = true)
   }

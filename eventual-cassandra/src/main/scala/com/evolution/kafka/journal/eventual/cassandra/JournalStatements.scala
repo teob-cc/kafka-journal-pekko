@@ -80,7 +80,8 @@ private[journal] object JournalStatements {
       implicit val encodeByNameByteVector: EncodeByName[ByteVector] = EncodeByName[Array[Byte]]
         .contramap { _.toArray }
 
-      val encodeByNameRecordMetadata = EncodeByName[RecordMetadata](using RecordMetadataExtension.encodeByNameRecordMetadata)
+      val encodeByNameRecordMetadata =
+        EncodeByName[RecordMetadata](using RecordMetadataExtension.encodeByNameRecordMetadata)
 
       val query =
         s"""

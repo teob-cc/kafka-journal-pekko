@@ -4,14 +4,15 @@ import com.datastax.driver.core.policies.{ExponentialReconnectionPolicy, Reconne
 import com.typesafe.config.Config
 import pureconfig.ConfigSource
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 /**
-  * See [[https://docs.datastax.com/en/developer/java-driver/3.5/manual/reconnection/]]
-  */
+ * See [[https://docs.datastax.com/en/developer/java-driver/3.5/manual/reconnection/]]
+ */
 final case class ReconnectionConfig(
   minDelay: FiniteDuration = 1.second,
-  maxDelay: FiniteDuration = 10.minutes) {
+  maxDelay: FiniteDuration = 10.minutes,
+) {
 
   def asJava: ReconnectionPolicy = {
     new ExponentialReconnectionPolicy(minDelay.toMillis, maxDelay.toMillis)
@@ -27,7 +28,6 @@ object ReconnectionConfig extends ReconnectionConfigImplicits {
 
   @deprecated("use ConfigReader instead", "1.2.0")
   def apply(config: Config, default: => ReconnectionConfig): ReconnectionConfig = fromConfig(config, default)
-
 
   def fromConfig(config: Config, default: => ReconnectionConfig): ReconnectionConfig = {
     ConfigSource.fromConfig(config).load[ReconnectionConfig] getOrElse default

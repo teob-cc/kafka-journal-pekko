@@ -1,21 +1,22 @@
 package com.evolutiongaming.scassandra
 
-import com.evolutiongaming.config.ConfigHelper._
+import com.evolutiongaming.config.ConfigHelper.*
 import com.evolutiongaming.nel.Nel
-import com.evolutiongaming.scassandra.ConfigHelpers._
+import com.evolutiongaming.scassandra.ConfigHelpers.*
 import com.typesafe.config.{Config, ConfigException}
 import pureconfig.{ConfigCursor, ConfigReader, ConfigSource}
 
 /**
-  * See [[https://docs.datastax.com/en/cassandra/3.0/cassandra/architecture/archDataDistributeReplication.html]]
-  */
+ * See
+ * [[https://docs.datastax.com/en/cassandra/3.0/cassandra/architecture/archDataDistributeReplication.html]]
+ */
 sealed trait ReplicationStrategyConfig
 
 object ReplicationStrategyConfig {
 
   val Default: ReplicationStrategyConfig = Simple.Default
 
-  implicit val configReaderReplicationStrategyConfig: ConfigReader[ReplicationStrategyConfig] = {
+  implicit val configReaderReplicationStrategyConfig: ConfigReader[ReplicationStrategyConfig] =
     (cursor: ConfigCursor) => {
       for {
         cursor <- cursor.asObjectCursor
@@ -23,7 +24,6 @@ object ReplicationStrategyConfig {
         fromConfig(cursor.objValue.toConfig)
       }
     }
-  }
 
   implicit val toCqlReplicationStrategyConfig: ToCql[ReplicationStrategyConfig] = {
     case a: Simple =>
@@ -46,13 +46,12 @@ object ReplicationStrategyConfig {
     def get[A: ConfigReader](name: String) = source.at(name).load[A]
 
     val strategy = get[String]("replication-strategy").toOption.map(_.toLowerCase).collect {
-      case "simple"          => get[Simple]("simple") getOrElse Simple.Default
+      case "simple" => get[Simple]("simple") getOrElse Simple.Default
       case "networktopology" => get[NetworkTopology]("network-topology") getOrElse NetworkTopology.Default
     }
 
     strategy getOrElse Simple.Default
   }
-
 
   final case class Simple(replicationFactor: Int = 1) extends ReplicationStrategyConfig
 
@@ -72,36 +71,38 @@ object ReplicationStrategyConfig {
     }
   }
 
-
   final case class NetworkTopology(
-    replicationFactors: Nel[NetworkTopology.DcFactor] = Nel(NetworkTopology.DcFactor())) extends ReplicationStrategyConfig
+    replicationFactors: Nel[NetworkTopology.DcFactor] = Nel(NetworkTopology.DcFactor()),
+  ) extends ReplicationStrategyConfig
 
   object NetworkTopology {
 
     val Default: NetworkTopology = NetworkTopology()
 
-    implicit val configReaderNetworkTopology: ConfigReader[NetworkTopology] = {
-      (cursor: ConfigCursor) => {
-        for {
-          cursor <- cursor.asObjectCursor
-        } yield {
-          fromConfig(cursor.objValue.toConfig)
-        }
+    implicit val configReaderNetworkTopology: ConfigReader[NetworkTopology] = (cursor: ConfigCursor) => {
+      for {
+        cursor <- cursor.asObjectCursor
+      } yield {
+        fromConfig(cursor.objValue.toConfig)
       }
     }
 
-
     @deprecated("use ConfigReader instead", "1.1.5")
     def apply(config: Config): NetworkTopology = fromConfig(config)
-
 
     private def fromConfig(config: Config): NetworkTopology = {
       val replicationFactors = {
         val path = "replication-factors"
         config.get[Nel[String]](path).map { str =>
           str.split(":").map(_.trim) match {
-            case Array(name, factor) => DcFactor(name, factor.toInt)
-            case str                 => throw new ConfigException.BadValue(config.origin(), path, s"Cannot parse DcFactor from $str")
+            case Array(name, ParseInt(factor)) => DcFactor(name, factor)
+            case unexpectedTokensArr =>
+              throw new ConfigException.BadValue(
+                config.origin(),
+                path,
+                // Array[T] doesn't have a nice toString, has to be formatted manually
+                s"Cannot parse DcFactor from ${ unexpectedTokensArr.mkString("(", ", ", ")") }",
+              )
           }
         }
       }
@@ -110,5 +111,9 @@ object ReplicationStrategyConfig {
     }
 
     final case class DcFactor(name: String = "localDc", replicationFactor: Int = 1)
+  }
+
+  private object ParseInt {
+    def unapply(str: String): Option[Int] = str.toIntOption
   }
 }

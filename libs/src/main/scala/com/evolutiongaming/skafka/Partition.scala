@@ -1,8 +1,8 @@
 package com.evolutiongaming.skafka
 
-import cats.{Eq, Show}
-import cats.implicits._
+import cats.implicits.*
 import cats.kernel.Order
+import cats.{Eq, Show}
 import com.evolutiongaming.catshelper.ApplicativeThrowable
 
 import scala.util.Try
@@ -40,5 +40,9 @@ object Partition {
     }
   }
 
-  def unsafe[A](value: A)(implicit numeric: Numeric[A]): Partition = of[Try](numeric.toInt(value)).get
+  def unsafe[A](
+    value: A,
+  )(implicit
+    numeric: Numeric[A],
+  ): Partition = of[Try](numeric.toInt(value)).get
 }

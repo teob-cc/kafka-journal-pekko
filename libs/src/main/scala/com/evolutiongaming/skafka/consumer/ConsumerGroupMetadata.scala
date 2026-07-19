@@ -1,12 +1,12 @@
 package com.evolutiongaming.skafka.consumer
 
-import cats.implicits._
+import cats.implicits.*
 
 final case class ConsumerGroupMetadata(
   groupId: String,
   generationId: Int,
   memberId: String,
-  groupInstanceId: Option[String]
+  groupInstanceId: Option[String],
 )
 
 object ConsumerGroupMetadata {

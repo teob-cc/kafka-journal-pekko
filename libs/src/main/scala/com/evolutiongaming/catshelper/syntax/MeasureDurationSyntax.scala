@@ -1,15 +1,14 @@
 package com.evolutiongaming.catshelper.syntax
 
-import cats.syntax.functor._
-import cats.syntax.flatMap._
 import cats.syntax.applicativeError._
 import cats.syntax.either._
+import cats.syntax.flatMap._
+import cats.syntax.functor._
 import cats.{Monad, MonadError}
 import com.evolutiongaming.catshelper.MeasureDuration
 
 import scala.concurrent.duration.FiniteDuration
 import scala.language.implicitConversions
-
 
 trait MeasureDurationSyntax {
   implicit def measureDurationSyntax[F[_], A](fa: F[A]): MeasureDurationOps[F, A] =
@@ -30,12 +29,17 @@ final class MeasureDurationOps[F[_], A](private val fa: F[A]) extends AnyVal {
    *   .measured { handler }
    * }}}
    *
-   * @param handleF function to consume calculated duration
-   * @return measured source F[A]
+   * @param handleF
+   *   function to consume calculated duration
+   * @return
+   *   measured source F[A]
    */
   def measured(
-    handleF: FiniteDuration => F[Unit]
-  )(implicit F: Monad[F], measureDuration: MeasureDuration[F]): F[A] =
+    handleF: FiniteDuration => F[Unit],
+  )(implicit
+    F: Monad[F],
+    measureDuration: MeasureDuration[F],
+  ): F[A] =
     for {
       measure <- measureDuration.start
       result <- fa
@@ -44,7 +48,8 @@ final class MeasureDurationOps[F[_], A](private val fa: F[A]) extends AnyVal {
     } yield result
 
   /**
-   * Calculate time spent on F execution and handle success/failure result cases using provided functions.
+   * Calculate time spent on F execution and handle success/failure result cases using provided
+   * functions.
    *
    * Example:
    * {{{
@@ -56,21 +61,27 @@ final class MeasureDurationOps[F[_], A](private val fa: F[A]) extends AnyVal {
    *   .measuredCase { successHandler, failureHandler }
    * }}}
    *
-   * @param successF function to consume calculated duration in case of success
-   * @param failureF function to consume calculated duration in case of failure
-   * @return measured source F[A]
+   * @param successF
+   *   function to consume calculated duration in case of success
+   * @param failureF
+   *   function to consume calculated duration in case of failure
+   * @return
+   *   measured source F[A]
    */
   def measuredCase[E](
     successF: FiniteDuration => F[Unit],
-    failureF: FiniteDuration => F[Unit]
-  )(implicit F: MonadError[F, E], measureDuration: MeasureDuration[F]): F[A] =
+    failureF: FiniteDuration => F[Unit],
+  )(implicit
+    F: MonadError[F, E],
+    measureDuration: MeasureDuration[F],
+  ): F[A] =
     for {
       measure <- measureDuration.start
       result <- fa.attempt
       duration <- measure
       _ <- result match {
         case Right(_) => successF(duration)
-        case Left(_)  => failureF(duration)
+        case Left(_) => failureF(duration)
       }
       result <- result.liftTo[F]
     } yield result

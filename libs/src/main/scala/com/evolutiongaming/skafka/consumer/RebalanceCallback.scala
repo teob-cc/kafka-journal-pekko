@@ -1,69 +1,68 @@
 package com.evolutiongaming.skafka.consumer
 
-import java.time.Instant
-
-import scala.unchecked
-
-import cats.data.{NonEmptyMap => Nem, NonEmptySet => Nes}
-import cats.implicits._
+import cats.data.{NonEmptyMap as Nem, NonEmptySet as Nes}
+import cats.implicits.*
 import cats.{Functor, Monad, StackSafeMonad, ~>}
-import com.evolutiongaming.catshelper.CatsHelper._
+import com.evolutiongaming.catshelper.CatsHelper.*
 import com.evolutiongaming.catshelper.{MonadThrowable, ToTry}
-import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.DataModel._
+import com.evolutiongaming.skafka.*
+import com.evolutiongaming.skafka.consumer.DataModel.*
 import com.evolutiongaming.skafka.consumer.RebalanceCallback.RebalanceCallbackOps
 
+import java.time.Instant
 import scala.annotation.tailrec
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
 
 /**
-  * Describes computations in callback methods of [[RebalanceListener1]].
-  *
-  * `RebalanceCallback` is just a data structure (a description of things to be done),
-  * so calling `RebalanceCallback.seek(...)` for example does not execute the `seek` right away.
-  *
-  * However all consumer related methods are executed on a `consumer.poll(...)` thread,
-  * at the time of interpretation/execution of the `RebalanceCallback` data structure.
-  *
-  * The computations' result is awaited on a `poll` thread,
-  * just as it would with blocking java API of `ConsumerRebalanceListener`.
-  *
-  * Errors from consumer related methods are thrown in a `poll` thread,
-  * and currently there's no way to provide recovering code for [[RebalanceCallback]],
-  * but it's planned to be [[https://github.com/evolution-gaming/skafka/issues/128 added]].
-  *
-  * Unhandled errors from lifted computations are thrown in a `poll` thread,
-  * currently it's only possible to handle those errors from within lifted F[_] context.
-  *
-  * Usage:
-  * {{{
-  * new RebalanceListener1WithConsumer[IO] {
-  *
-  *  // import is needed to use `fa.lift` syntax where
-  *  // `fa: F[A]`
-  *  // `fa.lift: RebalanceCallback[F, A]`
-  *  import RebalanceCallback.syntax._
-  *
-  *  def onPartitionsAssigned(partitions: NonEmptySet[TopicPartition]) = {
-  *    for {
-  *      state <- restoreStateFor(partitions).lift
-  *      a     <- state.offsets.foldMapM(o => consumer.seek(o.partition, o.offset))
-  *    } yield a
-  *  }
-  *
-  *  def onPartitionsRevoked(partitions: NonEmptySet[TopicPartition]) =
-  *    for {
-  *      offsets <- committableOffsetsFor(partitions).lift
-  *      a       <- consumer.commit(offsets)
-  *    } yield a
-  *
-  *  def onPartitionsLost(partitions: NonEmptySet[TopicPartition]) = RebalanceCallback.empty
-  * }
-  * }}}
-  * @see [[org.apache.kafka.clients.consumer.ConsumerRebalanceListener]]
-  * @see [[RebalanceListener1]]
-  */
+ * Describes computations in callback methods of [[RebalanceListener1]].
+ *
+ * `RebalanceCallback` is just a data structure (a description of things to be done), so calling
+ * `RebalanceCallback.seek(...)` for example does not execute the `seek` right away.
+ *
+ * However all consumer related methods are executed on a `consumer.poll(...)` thread, at the time
+ * of interpretation/execution of the `RebalanceCallback` data structure.
+ *
+ * The computations' result is awaited on a `poll` thread, just as it would with blocking java API
+ * of `ConsumerRebalanceListener`.
+ *
+ * Errors from consumer related methods are thrown in a `poll` thread, and currently there's no way
+ * to provide recovering code for [[RebalanceCallback]], but it's planned to be
+ * [[https://github.com/evolution-gaming/skafka/issues/128 added]].
+ *
+ * Unhandled errors from lifted computations are thrown in a `poll` thread, currently it's only
+ * possible to handle those errors from within lifted F[_] context.
+ *
+ * Usage:
+ * {{{
+ * new RebalanceListener1WithConsumer[IO] {
+ *
+ *  // import is needed to use `fa.lift` syntax where
+ *  // `fa: F[A]`
+ *  // `fa.lift: RebalanceCallback[F, A]`
+ *  import RebalanceCallback.syntax._
+ *
+ *  def onPartitionsAssigned(partitions: NonEmptySet[TopicPartition]) = {
+ *    for {
+ *      state <- restoreStateFor(partitions).lift
+ *      a     <- state.offsets.foldMapM(o => consumer.seek(o.partition, o.offset))
+ *    } yield a
+ *  }
+ *
+ *  def onPartitionsRevoked(partitions: NonEmptySet[TopicPartition]) =
+ *    for {
+ *      offsets <- committableOffsetsFor(partitions).lift
+ *      a       <- consumer.commit(offsets)
+ *    } yield a
+ *
+ *  def onPartitionsLost(partitions: NonEmptySet[TopicPartition]) = RebalanceCallback.empty
+ * }
+ * }}}
+ * @see
+ *   [[org.apache.kafka.clients.consumer.ConsumerRebalanceListener]]
+ * @see
+ *   [[RebalanceListener1]]
+ */
 sealed trait RebalanceCallback[+F[_], +A]
 
 object RebalanceCallback extends RebalanceCallbackInstances with RebalanceCallbackApi[Nothing] {
@@ -80,8 +79,10 @@ object RebalanceCallback extends RebalanceCallbackInstances with RebalanceCallba
       HandleErrorWith(() => self, f)
 
     def run(
-      consumer: RebalanceConsumer
-    )(implicit fToTry: ToTry[F]): Try[A] = {
+      consumer: RebalanceConsumer,
+    )(implicit
+      fToTry: ToTry[F],
+    ): Try[A] = {
       type S = Try[Any] => Try[RebalanceCallback[F, Any]]
 
       @tailrec
@@ -94,19 +95,19 @@ object RebalanceCallback extends RebalanceCallbackInstances with RebalanceCallba
                 loop(Try(c.source()), s :: ss)
               case c: Pure[A1] =>
                 ss match {
-                  case Nil     => c.a.pure[Try]
+                  case Nil => c.a.pure[Try]
                   case s :: ss => loop(s(Success(c.a)), ss)
                 }
               case c: (Lift[F, A1] @unchecked) =>
                 c.fa.toTry match {
                   case Success(a) =>
                     ss match {
-                      case Nil     => a.pure[Try]
+                      case Nil => a.pure[Try]
                       case s :: ss => loop(s(Success(a)), ss)
                     }
                   case f: Failure[_] =>
                     ss match {
-                      case Nil     => f
+                      case Nil => f
                       case s :: ss => loop(s(f), ss)
                     }
                 }
@@ -114,12 +115,12 @@ object RebalanceCallback extends RebalanceCallbackInstances with RebalanceCallba
                 c.f(consumer) match {
                   case Success(a) =>
                     ss match {
-                      case Nil     => a.pure[Try]
+                      case Nil => a.pure[Try]
                       case s :: ss => loop(s(Success(a)), ss)
                     }
                   case f: Failure[_] =>
                     ss match {
-                      case Nil     => f
+                      case Nil => f
                       case s :: ss => loop(s(f), ss)
                     }
                 }
@@ -137,7 +138,7 @@ object RebalanceCallback extends RebalanceCallbackInstances with RebalanceCallba
             }
           case f: Failure[_] =>
             ss match {
-              case Nil     => f
+              case Nil => f
               case s :: ss => loop(s(f), ss)
             }
         }
@@ -150,8 +151,10 @@ object RebalanceCallback extends RebalanceCallbackInstances with RebalanceCallba
     }
 
     def toF(
-      consumer: RebalanceConsumer
-    )(implicit MT: MonadThrowable[F]): F[A] = {
+      consumer: RebalanceConsumer,
+    )(implicit
+      MT: MonadThrowable[F],
+    ): F[A] = {
       type S = Try[Any] => Try[RebalanceCallback[F, Any]]
 
       def continue[A1](c: Try[RebalanceCallback[F, A1]], ss: List[S]): F[Any] =
@@ -167,19 +170,19 @@ object RebalanceCallback extends RebalanceCallbackInstances with RebalanceCallba
                 loop(Try(c.source()), s :: ss)
               case c: Pure[A1] =>
                 ss match {
-                  case Nil     => c.a.pure[F].widen
+                  case Nil => c.a.pure[F].widen
                   case s :: ss => loop(s(Success(c.a)), ss)
                 }
               case c: (Lift[F, A1] @unchecked) =>
                 c.fa.attempt.flatMap {
                   case Left(a) =>
                     ss match {
-                      case Nil     => a.raiseError[F, A1].widen
+                      case Nil => a.raiseError[F, A1].widen
                       case s :: ss => continue(s(Failure(a)), ss)
                     }
                   case Right(value) =>
                     ss match {
-                      case Nil     => value.pure[F].widen
+                      case Nil => value.pure[F].widen
                       case s :: ss => continue(s(Success(value)), ss)
                     }
                 }
@@ -205,7 +208,7 @@ object RebalanceCallback extends RebalanceCallbackInstances with RebalanceCallba
             }
           case f @ Failure(a) =>
             ss match {
-              case Nil     => a.raiseError[F, A1].widen
+              case Nil => a.raiseError[F, A1].widen
               case s :: ss => loop(s(f), ss)
             }
         }
@@ -218,11 +221,11 @@ object RebalanceCallback extends RebalanceCallbackInstances with RebalanceCallba
 
     def mapK[G[_]](fg: F ~> G): RebalanceCallback[G, A] = {
       (self: @unchecked) match {
-        case Pure(a)                     => Pure(a)
-        case Bind(source, f)             => Bind(() => source().mapK(fg), f andThen (_.mapK(fg)))
-        case Lift(fa)                    => Lift(fg(fa))
-        case WithConsumer(f)             => WithConsumer(f)
-        case Error(throwable)            => Error(throwable)
+        case Pure(a) => Pure(a)
+        case Bind(source, f) => Bind(() => source().mapK(fg), f andThen (_.mapK(fg)))
+        case Lift(fa) => Lift(fg(fa))
+        case WithConsumer(f) => WithConsumer(f)
+        case Error(throwable) => Error(throwable)
         case HandleErrorWith(source, fe) => HandleErrorWith(() => source().mapK(fg), fe andThen (_.mapK(fg)))
       }
     }
@@ -230,7 +233,7 @@ object RebalanceCallback extends RebalanceCallbackInstances with RebalanceCallba
 
   implicit class RebalanceCallbackNothingOps[A](val self: RebalanceCallback[Nothing, A]) extends AnyVal {
     def effectAs[F[_]]: RebalanceCallback[F, A] = self
-    def apply[F[_]]: RebalanceCallback[F, A]    = effectAs
+    def apply[F[_]]: RebalanceCallback[F, A] = effectAs
   }
 
   object syntax {
@@ -250,7 +253,7 @@ sealed trait RebalanceCallbackApi[F[_]] {
   final def lift[F1[_], A](fa: F1[A]): RebalanceCallback[F1, A] = Lift(fa)
 
   final def fromTry[A](fa: Try[A]): RebalanceCallback[F, A] = fa match {
-    case Success(value)     => pure(value)
+    case Success(value) => pure(value)
     case Failure(exception) => Error(exception)
   }
 
@@ -258,13 +261,13 @@ sealed trait RebalanceCallbackApi[F[_]] {
     WithConsumer(_.assignment())
 
   final def beginningOffsets(
-    partitions: Nes[TopicPartition]
+    partitions: Nes[TopicPartition],
   ): RebalanceCallback[F, Map[TopicPartition, Offset]] =
     WithConsumer(_.beginningOffsets(partitions))
 
   final def beginningOffsets(
     partitions: Nes[TopicPartition],
-    timeout: FiniteDuration
+    timeout: FiniteDuration,
   ): RebalanceCallback[F, Map[TopicPartition, Offset]] =
     WithConsumer(_.beginningOffsets(partitions, timeout))
 
@@ -279,29 +282,29 @@ sealed trait RebalanceCallbackApi[F[_]] {
 
   final def commit(
     offsets: Nem[TopicPartition, OffsetAndMetadata],
-    timeout: FiniteDuration
+    timeout: FiniteDuration,
   ): RebalanceCallback[F, Unit] =
     WithConsumer(_.commit(offsets, timeout))
 
   final def committed(
-    partitions: Nes[TopicPartition]
+    partitions: Nes[TopicPartition],
   ): RebalanceCallback[F, Map[TopicPartition, OffsetAndMetadata]] =
     WithConsumer(_.committed(partitions))
 
   final def committed(
     partitions: Nes[TopicPartition],
-    timeout: FiniteDuration
+    timeout: FiniteDuration,
   ): RebalanceCallback[F, Map[TopicPartition, OffsetAndMetadata]] =
     WithConsumer(_.committed(partitions, timeout))
 
   final def endOffsets(
-    partitions: Nes[TopicPartition]
+    partitions: Nes[TopicPartition],
   ): RebalanceCallback[F, Map[TopicPartition, Offset]] =
     WithConsumer(_.endOffsets(partitions))
 
   final def endOffsets(
     partitions: Nes[TopicPartition],
-    timeout: FiniteDuration
+    timeout: FiniteDuration,
   ): RebalanceCallback[F, Map[TopicPartition, Offset]] =
     WithConsumer(_.endOffsets(partitions, timeout))
 
@@ -315,13 +318,13 @@ sealed trait RebalanceCallbackApi[F[_]] {
     WithConsumer(_.topics(timeout))
 
   final def offsetsForTimes(
-    timestampsToSearch: Nem[TopicPartition, Instant]
+    timestampsToSearch: Nem[TopicPartition, Instant],
   ): RebalanceCallback[F, Map[TopicPartition, Option[OffsetAndTimestamp]]] =
     WithConsumer(_.offsetsForTimes(timestampsToSearch))
 
   final def offsetsForTimes(
     timestampsToSearch: Nem[TopicPartition, Instant],
-    timeout: FiniteDuration
+    timeout: FiniteDuration,
   ): RebalanceCallback[F, Map[TopicPartition, Option[OffsetAndTimestamp]]] =
     WithConsumer(_.offsetsForTimes(timestampsToSearch, timeout))
 
@@ -330,7 +333,7 @@ sealed trait RebalanceCallbackApi[F[_]] {
 
   final def partitionsFor(
     topic: Topic,
-    timeout: FiniteDuration
+    timeout: FiniteDuration,
   ): RebalanceCallback[F, List[PartitionInfo]] =
     WithConsumer(_.partitionsFor(topic, timeout))
 
@@ -358,6 +361,9 @@ sealed trait RebalanceCallbackApi[F[_]] {
   final def subscription: RebalanceCallback[F, Set[Topic]] =
     WithConsumer(_.subscription())
 
+  final def currentLag(partition: TopicPartition): RebalanceCallback[F, Option[Long]] =
+    WithConsumer(_.currentLag(partition))
+
 }
 
 private[consumer] trait RebalanceCallbackLowPrioInstances {
@@ -377,21 +383,23 @@ private[consumer] trait RebalanceCallbackLowPrioInstances {
 
 }
 
-abstract private[consumer] class RebalanceCallbackInstances extends RebalanceCallbackLowPrioInstances {
+private[consumer] abstract class RebalanceCallbackInstances extends RebalanceCallbackLowPrioInstances {
 
   implicit def catsMonadThrowableForRebalanceCallback[F[_]]: MonadThrowable[RebalanceCallback[F, *]] =
     new MonadThrowableForRebalanceCallback[F]
 
   private class MonadThrowableForRebalanceCallback[F[_]]
-      extends MonadForRebalanceCallback[F]
-      with MonadThrowable[RebalanceCallback[F, *]] {
+  extends MonadForRebalanceCallback[F]
+  with MonadThrowable[RebalanceCallback[F, *]] {
 
     override def raiseError[A](e: Throwable): RebalanceCallback[F, A] =
       RebalanceCallback.fromTry(Failure(e))
 
     override def handleErrorWith[A](
-      cb: RebalanceCallback[F, A]
-    )(f: Throwable => RebalanceCallback[F, A]): RebalanceCallback[F, A] =
+      cb: RebalanceCallback[F, A],
+    )(
+      f: Throwable => RebalanceCallback[F, A],
+    ): RebalanceCallback[F, A] =
       cb.handleErrorWith(f)
   }
 
@@ -402,7 +410,7 @@ private[consumer] object DataModel {
 
   // lazy source is needed to avoid StackOverflowError in mapK implementation
   final case class Bind[F[_], S, +A](source: () => RebalanceCallback[F, S], fs: S => RebalanceCallback[F, A])
-      extends RebalanceCallback[F, A]
+  extends RebalanceCallback[F, A]
 
   final case class Lift[F[_], A](fa: F[A]) extends RebalanceCallback[F, A]
 
@@ -412,7 +420,7 @@ private[consumer] object DataModel {
 
   final case class HandleErrorWith[F[_], A](
     source: () => RebalanceCallback[F, A],
-    fe: Throwable => RebalanceCallback[F, A]
+    fe: Throwable => RebalanceCallback[F, A],
   ) extends RebalanceCallback[F, A]
 
 }

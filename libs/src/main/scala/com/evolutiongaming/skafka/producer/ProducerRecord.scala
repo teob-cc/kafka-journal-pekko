@@ -1,37 +1,38 @@
 package com.evolutiongaming.skafka.producer
 
-import java.time.Instant
-
 import cats.effect.Sync
-import cats.implicits._
-import com.evolutiongaming.skafka._
+import cats.implicits.*
+import com.evolutiongaming.skafka.*
+
+import java.time.Instant
 
 final case class ProducerRecord[+K, +V](
   topic: Topic,
-  value: Option[V]             = None,
-  key: Option[K]               = None,
+  value: Option[V] = None,
+  key: Option[K] = None,
   partition: Option[Partition] = None,
-  timestamp: Option[Instant]   = None,
-  headers: List[Header]        = Nil
+  timestamp: Option[Instant] = None,
+  headers: List[Header] = Nil,
 )
 
 object ProducerRecord {
 
   def apply[K, V](topic: Topic, value: V, key: K): ProducerRecord[K, V] =
     ProducerRecord(
-      topic = topic, 
-      value = Some(value), 
-      key = Some(key), 
-      partition = None, 
-      timestamp = None, 
-      headers = Nil
+      topic = topic,
+      value = Some(value),
+      key = Some(key),
+      partition = None,
+      timestamp = None,
+      headers = Nil,
     )
 
   implicit class ProducerRecordOps[K, V](val self: ProducerRecord[K, V]) extends AnyVal {
 
     def toBytes[F[_]: Sync](
-      implicit toBytesK: ToBytes[F, K],
-      toBytesV: ToBytes[F, V]
+      implicit
+      toBytesK: ToBytes[F, K],
+      toBytesV: ToBytes[F, V],
     ): F[ProducerRecord[Bytes, Bytes]] = {
       val topic = self.topic
 

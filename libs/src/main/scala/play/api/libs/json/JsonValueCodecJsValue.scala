@@ -3,8 +3,9 @@ package play.api.libs.json
 import com.github.plokhotnyuk.jsoniter_scala.core.{JsonReader, JsonValueCodec, JsonWriter}
 
 /**
-  * INTERNAL API: It is an internal implementation for [[com.evolution.playjson.jsoniter.PlayJsonJsoniter]]`.
-  */
+ * INTERNAL API: It is an internal implementation for
+ * [[com.evolution.playjson.jsoniter.PlayJsonJsoniter]]`.
+ */
 object JsonValueCodecJsValue {
 
   def apply(bigDecimalParseSettings: BigDecimalParseConfig): JsonValueCodec[JsValue] =
@@ -24,7 +25,8 @@ object JsonValueCodecJsValue {
             null,
             bigDecimalParseSettings.mathContext,
             bigDecimalParseSettings.scaleLimit,
-            bigDecimalParseSettings.digitsLimit))
+            bigDecimalParseSettings.digitsLimit,
+          ))
         } else if (b == '[') {
           if (in.isNextToken(']')) JsArray.empty
           else {
@@ -40,7 +42,8 @@ object JsonValueCodecJsValue {
             if (in.isCurrentToken(']')) new JsArray({
               if (i == vs.length) vs
               else java.util.Arrays.copyOf(vs, i)
-            }) else in.arrayEndOrCommaError()
+            })
+            else in.arrayEndOrCommaError()
           }
         } else if (b == '{') {
           if (in.isNextToken('}')) JsObject.empty
@@ -54,7 +57,8 @@ object JsonValueCodecJsValue {
             if (in.isCurrentToken('}')) new JsObject({
               import scala.jdk.CollectionConverters._
               kvs.asScala
-            }) else in.objectEndOrCommaError()
+            })
+            else in.objectEndOrCommaError()
           }
         } else in.readNullOrError(default, "expected JSON value")
       }

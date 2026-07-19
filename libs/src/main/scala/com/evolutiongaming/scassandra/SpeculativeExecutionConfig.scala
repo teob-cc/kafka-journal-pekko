@@ -4,14 +4,15 @@ import com.datastax.driver.core.policies.{ConstantSpeculativeExecutionPolicy, Sp
 import com.typesafe.config.Config
 import pureconfig.ConfigSource
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 /**
-  * See [[https://docs.datastax.com/en/developer/java-driver/3.5/manual/speculative_execution/]]
-  */
+ * See [[https://docs.datastax.com/en/developer/java-driver/3.5/manual/speculative_execution/]]
+ */
 final case class SpeculativeExecutionConfig(
   delay: FiniteDuration = 500.millis,
-  maxExecutions: Int = 2) {
+  maxExecutions: Int = 2,
+) {
 
   def asJava: SpeculativeExecutionPolicy = {
     new ConstantSpeculativeExecutionPolicy(delay.toMillis, maxExecutions)

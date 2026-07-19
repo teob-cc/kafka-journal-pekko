@@ -1,39 +1,40 @@
 package com.evolutiongaming.skafka.consumer
 
-import com.evolutiongaming.config.ConfigHelper.{FromConf, _}
+import com.evolutiongaming.config.ConfigHelper.{FromConf, *}
 import com.evolutiongaming.skafka.{CommonConfig, SaslSupportConfig, SslSupportConfig}
 import com.typesafe.config.{Config, ConfigException}
 import org.apache.kafka.clients.CommonClientConfigs
-import org.apache.kafka.clients.consumer.{ConsumerConfig => C}
+import org.apache.kafka.clients.consumer.ConsumerConfig as C
 
-import scala.concurrent.duration.{FiniteDuration, _}
+import scala.concurrent.duration.{FiniteDuration, *}
 
 /**
-  * Check [[https://kafka.apache.org/documentation/#newconsumerconfigs]]
-  */
+ * Check [[https://kafka.apache.org/documentation/#newconsumerconfigs]]
+ */
 final case class ConsumerConfig(
-  common: CommonConfig                       = CommonConfig.Default,
-  groupId: Option[String]                    = None,
-  maxPollRecords: Int                        = 500,
-  maxPollInterval: FiniteDuration            = 5.minutes,
-  sessionTimeout: FiniteDuration             = 10.seconds,
-  heartbeatInterval: FiniteDuration          = 3.seconds,
-  autoCommit: Boolean                        = true,
+  common: CommonConfig = CommonConfig.Default,
+  groupId: Option[String] = None,
+  maxPollRecords: Int = 500,
+  maxPollInterval: FiniteDuration = 5.minutes,
+  sessionTimeout: FiniteDuration = 10.seconds,
+  heartbeatInterval: FiniteDuration = 3.seconds,
+  autoCommit: Boolean = true,
   autoCommitInterval: Option[FiniteDuration] = None,
-  partitionAssignmentStrategy: String        = "org.apache.kafka.clients.consumer.RangeAssignor,org.apache.kafka.clients.consumer.CooperativeStickyAssignor",
-  autoOffsetReset: AutoOffsetReset           = AutoOffsetReset.Latest,
-  defaultApiTimeout: FiniteDuration          = 1.minute,
-  fetchMinBytes: Int                         = 1,
-  fetchMaxBytes: Int                         = 52428800,
-  fetchMaxWait: FiniteDuration               = 500.millis,
-  maxPartitionFetchBytes: Int                = 1048576,
-  checkCrcs: Boolean                         = true,
-  interceptorClasses: List[String]           = Nil,
-  excludeInternalTopics: Boolean             = true,
-  isolationLevel: IsolationLevel             = IsolationLevel.ReadUncommitted,
-  saslSupport: SaslSupportConfig             = SaslSupportConfig.Default,
-  sslSupport: SslSupportConfig               = SslSupportConfig.Default,
-  clientRack: Option[String]                 = None,
+  partitionAssignmentStrategy: String =
+    "org.apache.kafka.clients.consumer.RangeAssignor,org.apache.kafka.clients.consumer.CooperativeStickyAssignor",
+  autoOffsetReset: AutoOffsetReset = AutoOffsetReset.Latest,
+  defaultApiTimeout: FiniteDuration = 1.minute,
+  fetchMinBytes: Int = 1,
+  fetchMaxBytes: Int = 52428800,
+  fetchMaxWait: FiniteDuration = 500.millis,
+  maxPartitionFetchBytes: Int = 1048576,
+  checkCrcs: Boolean = true,
+  interceptorClasses: List[String] = Nil,
+  excludeInternalTopics: Boolean = true,
+  isolationLevel: IsolationLevel = IsolationLevel.ReadUncommitted,
+  saslSupport: SaslSupportConfig = SaslSupportConfig.Default,
+  sslSupport: SslSupportConfig = SslSupportConfig.Default,
+  clientRack: Option[String] = None,
 ) {
 
   def bindings: Map[String, String] = {
@@ -58,7 +59,7 @@ final case class ConsumerConfig(
       (C.CHECK_CRCS_CONFIG, checkCrcs.toString),
       (C.INTERCEPTOR_CLASSES_CONFIG, interceptorClasses.mkString(",")),
       (C.EXCLUDE_INTERNAL_TOPICS_CONFIG, excludeInternalTopics.toString),
-      (C.ISOLATION_LEVEL_CONFIG, isolationLevel.name)
+      (C.ISOLATION_LEVEL_CONFIG, isolationLevel.name),
     )
 
     bindings ++ common.bindings ++ rackMap ++ saslSupport.bindings ++ sslSupport.bindings
@@ -76,7 +77,7 @@ object ConsumerConfig {
   val Default: ConsumerConfig = ConsumerConfig()
 
   private implicit val AutoOffsetResetFromConf: FromConf[AutoOffsetReset] = FromConf[AutoOffsetReset] { (conf, path) =>
-    val str   = conf.getString(path)
+    val str = conf.getString(path)
     val value = AutoOffsetReset.Values.find { _.toString.equalsIgnoreCase(str) }
     value.getOrElse {
       throw new ConfigException.BadValue(conf.origin(), path, s"Cannot parse AutoOffsetReset from $str")
@@ -84,7 +85,7 @@ object ConsumerConfig {
   }
 
   private implicit val IsolationLevelFromConf: FromConf[IsolationLevel] = FromConf[IsolationLevel] { (conf, path) =>
-    val str   = conf.getString(path)
+    val str = conf.getString(path)
     val value = IsolationLevel.Values.find { _.name.equalsIgnoreCase(str) }
     value.getOrElse {
       throw new ConfigException.BadValue(conf.origin(), path, s"Cannot parse IsolationLevel from $str")
@@ -97,11 +98,11 @@ object ConsumerConfig {
 
   def apply(config: Config, default: => ConsumerConfig): ConsumerConfig = {
 
-    def get[T: FromConf](path: String, paths: String*) = {
+    def get[T: FromConf](path: String, paths: String*): Option[T] = {
       config.getOpt[T](path, paths*)
     }
 
-    def getDuration(path: String, pathMs: => String) = {
+    def getDuration(path: String, pathMs: => String): Option[FiniteDuration] = {
       val value =
         try get[FiniteDuration](path)
         catch { case _: ConfigException => None }
@@ -109,11 +110,11 @@ object ConsumerConfig {
     }
 
     ConsumerConfig(
-      common          = CommonConfig(config, default.common),
-      groupId         = get[String]("group-id", "group.id") orElse default.groupId,
-      maxPollRecords  = get[Int]("max-poll-records", "max.poll.records") getOrElse default.maxPollRecords,
+      common = CommonConfig(config, default.common),
+      groupId = get[String]("group-id", "group.id") orElse default.groupId,
+      maxPollRecords = get[Int]("max-poll-records", "max.poll.records") getOrElse default.maxPollRecords,
       maxPollInterval = getDuration("max-poll-interval", "max.poll.interval.ms") getOrElse default.maxPollInterval,
-      sessionTimeout  = getDuration("session-timeout", "session.timeout.ms") getOrElse default.sessionTimeout,
+      sessionTimeout = getDuration("session-timeout", "session.timeout.ms") getOrElse default.sessionTimeout,
       heartbeatInterval =
         getDuration("heartbeat-interval", "heartbeat.interval.ms") getOrElse default.heartbeatInterval,
       autoCommit = get[Boolean]("auto-commit", "enable-auto-commit", "enable.auto.commit") getOrElse default.autoCommit,
@@ -121,7 +122,7 @@ object ConsumerConfig {
         getDuration("auto-commit-interval", "auto.commit.interval.ms") orElse default.autoCommitInterval,
       partitionAssignmentStrategy = get[String](
         "partition-assignment-strategy",
-        "partition.assignment.strategy"
+        "partition.assignment.strategy",
       ) getOrElse default.partitionAssignmentStrategy,
       autoOffsetReset =
         get[AutoOffsetReset]("auto-offset-reset", "auto.offset.reset") getOrElse default.autoOffsetReset,
@@ -129,7 +130,7 @@ object ConsumerConfig {
         get[FiniteDuration]("default-api-timeout", "default.api.timeout.ms") getOrElse default.defaultApiTimeout,
       fetchMinBytes = get[Int]("fetch-min-bytes", "fetch.min.bytes") getOrElse default.fetchMinBytes,
       fetchMaxBytes = get[Int]("fetch-max-bytes", "fetch.max.bytes") getOrElse default.fetchMaxBytes,
-      fetchMaxWait  = getDuration("fetch-max-wait", "fetch.max.wait.ms") getOrElse default.fetchMaxWait,
+      fetchMaxWait = getDuration("fetch-max-wait", "fetch.max.wait.ms") getOrElse default.fetchMaxWait,
       maxPartitionFetchBytes =
         get[Int]("max-partition-fetch-bytes", "max.partition.fetch.bytes") getOrElse default.maxPartitionFetchBytes,
       checkCrcs = get[Boolean]("check-crcs", "check.crcs") getOrElse default.checkCrcs,
@@ -138,13 +139,13 @@ object ConsumerConfig {
       excludeInternalTopics =
         get[Boolean]("exclude-internal-topics", "exclude.internal.topics") getOrElse default.excludeInternalTopics,
       isolationLevel = get[IsolationLevel]("isolation-level", "isolation.level") getOrElse default.isolationLevel,
-      saslSupport    = SaslSupportConfig(config, default.saslSupport),
-      sslSupport     = SslSupportConfig(config),
-      clientRack     = get[String]("client-rack", "client.rack") orElse default.clientRack,
+      saslSupport = SaslSupportConfig(config, default.saslSupport),
+      sslSupport = SslSupportConfig(config),
+      clientRack = get[String]("client-rack", "client.rack") orElse default.clientRack,
     )
   }
 
-  //for binary compatibility
+  // for binary compatibility
   private[consumer] def apply(
     common: CommonConfig,
     groupId: Option[String],
@@ -167,26 +168,26 @@ object ConsumerConfig {
     isolationLevel: IsolationLevel,
     saslSupport: SaslSupportConfig,
   ): ConsumerConfig = new ConsumerConfig(
-    common                      = common,
-    groupId                     = groupId,
-    maxPollRecords              = maxPollRecords,
-    maxPollInterval             = maxPollInterval,
-    sessionTimeout              = sessionTimeout,
-    heartbeatInterval           = heartbeatInterval,
-    autoCommit                  = autoCommit,
-    autoCommitInterval          = Some(autoCommitInterval),
+    common = common,
+    groupId = groupId,
+    maxPollRecords = maxPollRecords,
+    maxPollInterval = maxPollInterval,
+    sessionTimeout = sessionTimeout,
+    heartbeatInterval = heartbeatInterval,
+    autoCommit = autoCommit,
+    autoCommitInterval = Some(autoCommitInterval),
     partitionAssignmentStrategy = partitionAssignmentStrategy,
-    autoOffsetReset             = autoOffsetReset,
-    defaultApiTimeout           = defaultApiTimeout,
-    fetchMinBytes               = fetchMinBytes,
-    fetchMaxBytes               = fetchMaxBytes,
-    fetchMaxWait                = fetchMaxWait,
-    maxPartitionFetchBytes      = maxPartitionFetchBytes,
-    checkCrcs                   = checkCrcs,
-    interceptorClasses          = interceptorClasses,
-    excludeInternalTopics       = excludeInternalTopics,
-    isolationLevel              = isolationLevel,
-    saslSupport                 = saslSupport,
+    autoOffsetReset = autoOffsetReset,
+    defaultApiTimeout = defaultApiTimeout,
+    fetchMinBytes = fetchMinBytes,
+    fetchMaxBytes = fetchMaxBytes,
+    fetchMaxWait = fetchMaxWait,
+    maxPartitionFetchBytes = maxPartitionFetchBytes,
+    checkCrcs = checkCrcs,
+    interceptorClasses = interceptorClasses,
+    excludeInternalTopics = excludeInternalTopics,
+    isolationLevel = isolationLevel,
+    saslSupport = saslSupport,
   )
 
   // Constructor for backward compatibility (version <= 11.5)
@@ -211,26 +212,26 @@ object ConsumerConfig {
     excludeInternalTopics: Boolean,
     isolationLevel: IsolationLevel,
   ): ConsumerConfig = new ConsumerConfig(
-    common                      = common,
-    groupId                     = groupId,
-    maxPollRecords              = maxPollRecords,
-    maxPollInterval             = maxPollInterval,
-    sessionTimeout              = sessionTimeout,
-    heartbeatInterval           = heartbeatInterval,
-    autoCommit                  = autoCommit,
-    autoCommitInterval          = Some(autoCommitInterval),
+    common = common,
+    groupId = groupId,
+    maxPollRecords = maxPollRecords,
+    maxPollInterval = maxPollInterval,
+    sessionTimeout = sessionTimeout,
+    heartbeatInterval = heartbeatInterval,
+    autoCommit = autoCommit,
+    autoCommitInterval = Some(autoCommitInterval),
     partitionAssignmentStrategy = partitionAssignmentStrategy,
-    autoOffsetReset             = autoOffsetReset,
-    defaultApiTimeout           = defaultApiTimeout,
-    fetchMinBytes               = fetchMinBytes,
-    fetchMaxBytes               = fetchMaxBytes,
-    fetchMaxWait                = fetchMaxWait,
-    maxPartitionFetchBytes      = maxPartitionFetchBytes,
-    checkCrcs                   = checkCrcs,
-    interceptorClasses          = interceptorClasses,
-    excludeInternalTopics       = excludeInternalTopics,
-    isolationLevel              = isolationLevel,
-    saslSupport                 = SaslSupportConfig.Default,
-    sslSupport                  = SslSupportConfig.Default,
+    autoOffsetReset = autoOffsetReset,
+    defaultApiTimeout = defaultApiTimeout,
+    fetchMinBytes = fetchMinBytes,
+    fetchMaxBytes = fetchMaxBytes,
+    fetchMaxWait = fetchMaxWait,
+    maxPartitionFetchBytes = maxPartitionFetchBytes,
+    checkCrcs = checkCrcs,
+    interceptorClasses = interceptorClasses,
+    excludeInternalTopics = excludeInternalTopics,
+    isolationLevel = isolationLevel,
+    saslSupport = SaslSupportConfig.Default,
+    sslSupport = SslSupportConfig.Default,
   )
 }
