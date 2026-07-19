@@ -345,20 +345,23 @@ private[journal] object PartitionCache {
                 min = records.minimumBy { _.offset }.offset,
                 max = records.maximumBy { _.offset }.offset,
               )
-              values = for {
-                (id, values) <- records
-                  .toList
-                  .collect { case Record(offset, Some(data)) => (offset, data) }
-                  .groupBy { case (_, record) => record.id }
-                (offset, _) = values.maxBy { case (offset, _) => offset }
-                info = values.foldLeft(HeadInfo.empty) { case (info, (offset, data)) => info(data.header, offset) }
-                entry <- info match {
-                  case HeadInfo.Empty => none[Entry]
-                  case a: HeadInfo.NonEmpty => Entry(offset = offset, a).some
+              values = records
+                .toList
+                .collect { case Record(offset, Some(data)) => (offset, data) }
+                .groupBy { case (_, record) => record.id }
+                .toList
+                .flatMap {
+                  case (id, values) =>
+                    val (offset, _) = values.maxBy { case (offset, _) => offset }
+                    val info = values.foldLeft(HeadInfo.empty) {
+                      case (info, (offset, data)) => info(data.header, offset)
+                    }
+                    val entry = info match {
+                      case HeadInfo.Empty => none[Entry]
+                      case a: HeadInfo.NonEmpty => Entry(offset = offset, a).some
+                    }
+                    entry.map { entry => (id, entry) }.toList
                 }
-              } yield {
-                (id, entry)
-              }
               entries = Entries(bounds = bounds, values = values.toMap)
 
               result <- 0.tailRecM { counter =>

@@ -49,12 +49,14 @@ lazy val commonSettings = Seq(
   scalacOptions ++= Seq(
     "-release:17",
     "-deprecation",
+    "-feature",
     "-Xkind-projector:underscores",
     "-no-indent",
     "-explain",
     "-explain-types",
   ),
-  Compile / doc / scalacOptions ++= Seq("-groups", "-implicits", "-no-link-warnings"),
+  // scaladoc 3 options only: "-implicits" was scaladoc 2 and is rejected
+  Compile / doc / scalacOptions ++= Seq("-groups", "-no-link-warnings"),
   Compile / doc / scalacOptions -= "-Xfatal-warnings",
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   libraryDependencySchemes ++= Seq(

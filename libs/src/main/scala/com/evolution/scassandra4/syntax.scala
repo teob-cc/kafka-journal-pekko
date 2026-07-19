@@ -6,6 +6,8 @@ import com.datastax.oss.driver.api.core.data.{GettableByIndex, GettableByName, S
 import com.evolution.scassandra4.util.FromCompletionStage
 import com.evolutiongaming.sstream.Stream
 
+import scala.language.implicitConversions
+
 object syntax {
 
   implicit class ScassandraAsyncResultSetOps(val self: AsyncResultSet) extends AnyVal {

@@ -28,7 +28,7 @@ object CassandraCluster {
         session <- cluster.connect
         session <- CassandraSession.make[F](session)
       } yield {
-        CassandraSession(session)
+        CassandraSession(session, trace = false)
       }
     }
   }
