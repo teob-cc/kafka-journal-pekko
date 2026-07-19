@@ -4,7 +4,7 @@ This repository is a fork of [evolution-gaming/kafka-journal](https://github.com
 maintained independently by Lambda House. The original project is
 Copyright (c) 2018 Evolution Gaming and licensed under the MIT license (see [LICENSE](LICENSE)).
 
-Functional parity point with upstream: **v9.1.1** (see `V9_CATCHUP.md`).
+Functional parity point with upstream: **v9.1.1** (see `docs/V9_CATCHUP.md`).
 
 ## Insourced libraries
 
@@ -17,7 +17,7 @@ sources were captured from.
 |---|---|---|
 | cats-helper | https://github.com/evolution-gaming/cats-helper | 3.12.2 |
 | skafka | https://github.com/evolution-gaming/skafka | v20.2.1 |
-| scassandra4 | https://github.com/evolution-gaming/scassandra | branch `wip/driver-4-support-attempt-2` @ `8b5e9fd12d3aad2a5c214dae9b303cede6422d4a` (unreleased; replaced the driver-3 scassandra v5.6.0, removed in the driver-4 migration — see `DRIVER4_CATCHUP.md`) |
+| scassandra4 | https://github.com/evolution-gaming/scassandra | branch `wip/driver-4-support-attempt-2` @ `8b5e9fd12d3aad2a5c214dae9b303cede6422d4a` (unreleased; replaced the driver-3 scassandra v5.6.0, removed in the driver-4 migration — see `docs/DRIVER4_CATCHUP.md`) |
 | sstream | https://github.com/evolution-gaming/sstream | 1.1.0 |
 | scache | https://github.com/evolution-gaming/scache | v6.0.1 |
 | smetrics | https://github.com/evolution-gaming/smetrics | v2.4.3 (verified identical to v2.4.5 for vendored modules) |

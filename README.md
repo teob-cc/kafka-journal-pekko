@@ -3,7 +3,7 @@
 > Lambda House fork of [evolution-gaming/kafka-journal](https://github.com/evolution-gaming/kafka-journal),
 > maintained independently: Pekko-only, Scala 3.8.x, all Evolution library
 > dependencies insourced as source into `libs/` (see [NOTICE.md](NOTICE.md)).
-> Upstream parity point: v9.1.1 ([V9_CATCHUP.md](V9_CATCHUP.md)). MIT licensed.
+> Upstream parity point: v9.1.1 ([V9_CATCHUP.md](docs/V9_CATCHUP.md)). MIT licensed.
 > Artifacts are published to the Lambda House Nexus under `cc.lambdahouse`.
 
 > Stream data from two sources where one is eventually consistent and the other one loses its tail
