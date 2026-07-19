@@ -3,9 +3,9 @@ import com.typesafe.tools.mima.core.*
 import sbt.Package.ManifestAttributes
 
 lazy val commonSettings = Seq(
-  organization := "com.evolution",
-  organizationName := "Evolution",
-  organizationHomepage := Some(url("https://evolution.com")),
+  organization := "cc.lambdahouse",
+  organizationName := "Lambda House",
+  organizationHomepage := Some(url("https://github.com/lambda-house")),
   homepage := Some(url("https://github.com/lambda-house/kafka-journal-pekko")),
   startYear := Some(2018),
   crossScalaVersions := Seq("3.8.2"),
