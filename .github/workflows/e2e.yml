@@ -1,0 +1,83 @@
+name: E2E (clone platform)
+
+# Clone-e2e lane (infra provisioning plan §9 / repo CLAUDE.md next-steps):
+# full IntegrationSuite in external-services mode against the same
+# Redpanda v25.1.1 + Scylla 2025.1 images as local dev, cit and prod.
+# Runs on the lambda-house self-hosted DinD runners (~4-5 Gi peak, 6 Gi limit).
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  e2e:
+    runs-on:
+      - self-hosted
+      - cit
+
+    timeout-minutes: 90
+
+    steps:
+      - name: Ensure sbt is available on PATH
+        run: |
+          if [ -x /usr/local/sbt/bin/sbt ]; then
+            echo "/usr/local/sbt/bin" >> "$GITHUB_PATH"
+          elif [ -x /usr/local/bin/sbt ]; then
+            echo "/usr/local/bin" >> "$GITHUB_PATH"
+          else
+            echo "sbt not found" >&2
+            exit 1
+          fi
+
+      - name: Ensure docker compose is available
+        run: |
+          if docker compose version >/dev/null 2>&1; then
+            docker compose version
+          else
+            echo "docker compose plugin missing - installing to ~/.docker/cli-plugins"
+            mkdir -p ~/.docker/cli-plugins
+            curl -fsSL -o ~/.docker/cli-plugins/docker-compose \
+              "https://github.com/docker/compose/releases/download/v2.39.2/docker-compose-linux-x86_64"
+            chmod +x ~/.docker/cli-plugins/docker-compose
+            docker compose version
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Start Redpanda + Scylla (fresh volumes)
+        # --wait blocks on the compose healthchecks (rpk cluster health / cqlsh).
+        # down -v first is belt-and-braces: the TCK needs a virgin journal and
+        # ephemeral runners should never carry volumes, but a rerun on a warm
+        # pod must not see stale data (see CLAUDE.md on JSON-decode fallback
+        # failures from dirty state).
+        run: |
+          docker compose down -v --remove-orphans || true
+          docker compose up -d --wait
+          docker ps
+
+      - name: Run IntegrationSuite (external services)
+        run: sbt tests/test
+        env:
+          KAFKA_JOURNAL_EXTERNAL_SERVICES: "true"
+          # .jvmopts (-Xmx4G) must fit the runner pod's 6Gi cgroup limit
+          JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=85.0 -Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"
+
+      - name: Service logs on failure
+        if: failure()
+        run: |
+          echo "=== redpanda ==="
+          docker compose logs --tail=150 redpanda || true
+          echo "=== scylla ==="
+          docker compose logs --tail=150 scylla || true
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v --remove-orphans || true
+
+      - name: Summary
+        run: |
+          echo "### Clone-platform E2E green ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "IntegrationSuite against Redpanda v25.1.1 + Scylla 2025.1 (external-services mode, fresh volumes)" >> $GITHUB_STEP_SUMMARY
