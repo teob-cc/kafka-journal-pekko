@@ -129,6 +129,7 @@ lazy val libs = project
       Jsoniter,
       KafkaClients,
       CassandraDriver,
+      CassandraDriver4,
       Scodec.Bits,
       Scodec.Core,
       Slf4j.Api,
