@@ -2,7 +2,6 @@ name: Publish to Nexus
 
 on:
   push:
-    branches: [ master ]
     tags:
       - 'v*'
   workflow_dispatch:
@@ -119,7 +118,12 @@ jobs:
           echo "Publishing version: $VERSION"
 
       - name: Run tests and publish
-        run: sbt "Test/compile; test; publish"
+        # .jvmopts pins -Xmx for local dev; in CI let MaxRAMPercentage size the
+        # JVM to the runner pod's 6Gi cgroup limit instead (explicit -Xmx wins
+        # over percentage and OOM-kills the pod).
+        run: |
+          rm -f .jvmopts
+          sbt "Test/compile; testUnit; publish"
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
           JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=85.0 -Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"
