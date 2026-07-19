@@ -1,31 +1,31 @@
 import sbt.*
 
 object Dependencies {
-  val ScalaTest = "org.scalatest" %% "scalatest" % "3.2.19"
+  val ScalaTest = "org.scalatest" %% "scalatest" % "3.2.20"
   val CassandraDriver = "com.datastax.cassandra" % "cassandra-driver-core" % "3.11.5"
-  val KafkaClients = "org.apache.kafka" % "kafka-clients" % "3.4.0"
-  val PlayJson = "com.typesafe.play" %% "play-json" % "2.10.8"
-  val Jsoniter = "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core" % "2.36.7"
+  val KafkaClients = "org.apache.kafka" % "kafka-clients" % "4.3.1"
+  val PlayJson = "org.playframework" %% "play-json" % "3.0.6"
+  val Jsoniter = "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core" % "2.39.1"
 
   object Cats {
     val Core = "org.typelevel" %% "cats-core" % "2.13.0"
-    val Effect = "org.typelevel" %% "cats-effect" % "3.6.3"
+    val Effect = "org.typelevel" %% "cats-effect" % "3.7.0"
   }
 
   object Logback {
-    private val version = "1.5.32"
+    private val version = "1.5.38"
     val Core = "ch.qos.logback" % "logback-core" % version
     val Classic = "ch.qos.logback" % "logback-classic" % version
   }
 
   object Slf4j {
-    private val version = "2.0.17"
+    private val version = "2.0.18"
     val Api = "org.slf4j" % "slf4j-api" % version
     val Log4jOverSlf4j = "org.slf4j" % "log4j-over-slf4j" % version
   }
 
   object Pekko {
-    private val version = "1.4.0"
+    private val version = "1.6.0"
     val Actor = "org.apache.pekko" %% "pekko-actor" % version
     val Testkit = "org.apache.pekko" %% "pekko-testkit" % version
     val Stream = "org.apache.pekko" %% "pekko-stream" % version
@@ -35,7 +35,7 @@ object Dependencies {
   }
 
   object Scodec {
-    val Bits = "org.scodec" %% "scodec-bits" % "1.2.4"
+    val Bits = "org.scodec" %% "scodec-bits" % "1.2.5"
     val Core = "org.scodec" %% "scodec-core" % "2.3.3"
   }
 
@@ -47,7 +47,7 @@ object Dependencies {
   }
 
   object Circe {
-    private val version = "0.14.15"
+    private val version = "0.14.16"
     val Core = "io.circe" %% "circe-core" % version
     val Generic = "io.circe" %% "circe-generic" % version
     val Jawn = "io.circe" %% "circe-jawn" % version

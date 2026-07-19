@@ -45,7 +45,7 @@ object PlayJsonJsoniter {
     writeToString(payload)
 
   def serializeToBuffer(payload: JsValue, bbuf: ByteBuffer): Unit =
-     writeToByteBuffer(payload, bbuf)
+    writeToByteBuffer(payload, bbuf)
 
   def serializeToOutput(payload: JsValue, out: OutputStream): Unit =
     writeToStream(payload, out)

@@ -51,7 +51,7 @@ private[journal] object TemporalHelper {
       case MILLISECONDS => ChronoUnit.MILLIS
       case MICROSECONDS => ChronoUnit.MICROS
       case NANOSECONDS => ChronoUnit.NANOS
-      case _           => throw new IllegalArgumentException(s"Unexpected TimeUnit: $self")
+      case _ => throw new IllegalArgumentException(s"Unexpected TimeUnit: $self")
     }
   }
 }

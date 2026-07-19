@@ -1,39 +1,39 @@
 package com.evolutiongaming.skafka.producer
 
-import com.evolutiongaming.config.ConfigHelper._
+import com.evolutiongaming.config.ConfigHelper.*
 import com.evolutiongaming.skafka.{CommonConfig, SaslSupportConfig, SslSupportConfig}
 import com.typesafe.config.{Config, ConfigException}
-import org.apache.kafka.clients.producer.{Partitioner, ProducerConfig => C}
+import org.apache.kafka.clients.producer.{Partitioner, ProducerConfig as C}
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 import scala.util.Try
 
 /**
-  * Check [[http://kafka.apache.org/documentation/#producerconfigs]]
-  */
+ * Check [[http://kafka.apache.org/documentation/#producerconfigs]]
+ */
 final case class ProducerConfig(
-  common: CommonConfig                              = CommonConfig.Default,
-  batchSize: Int                                    = 16384,
-  deliveryTimeout: FiniteDuration                   = 2.minutes,
-  acks: Acks                                        = Acks.All,
-  linger: FiniteDuration                            = 0.millis,
-  maxRequestSize: Int                               = 1048576,
-  maxBlock: FiniteDuration                          = 1.minute,
-  bufferMemory: Long                                = 33554432L,
-  compressionType: CompressionType                  = CompressionType.None,
-  retries: Int                                      = Int.MaxValue,
-  maxInFlightRequestsPerConnection: Int             = 5,
+  common: CommonConfig = CommonConfig.Default,
+  batchSize: Int = 16384,
+  deliveryTimeout: FiniteDuration = 2.minutes,
+  acks: Acks = Acks.All,
+  linger: FiniteDuration = 0.millis,
+  maxRequestSize: Int = 1048576,
+  maxBlock: FiniteDuration = 1.minute,
+  bufferMemory: Long = 33554432L,
+  compressionType: CompressionType = CompressionType.None,
+  retries: Int = Int.MaxValue,
+  maxInFlightRequestsPerConnection: Int = 5,
   partitionerClass: Option[Class[? <: Partitioner]] = None,
-  interceptorClasses: List[String]                  = Nil,
-  idempotence: Boolean                              = true,
-  transactionTimeout: FiniteDuration                = 1.minute,
-  transactionalId: Option[String]                   = None,
-  saslSupport: SaslSupportConfig                    = SaslSupportConfig.Default,
-  sslSupport: SslSupportConfig                      = SslSupportConfig.Default,
-  partitionerIgnoreKeys: Boolean                    = false,
-  partitionerAdaptivePartitioningEnable: Boolean    = true,
-  partitionerAvailabilityTimeout: FiniteDuration    = 0.seconds,
-  metadataMaxIdle: FiniteDuration                   = 5.minutes,
+  interceptorClasses: List[String] = Nil,
+  idempotence: Boolean = true,
+  transactionTimeout: FiniteDuration = 1.minute,
+  transactionalId: Option[String] = None,
+  saslSupport: SaslSupportConfig = SaslSupportConfig.Default,
+  sslSupport: SslSupportConfig = SslSupportConfig.Default,
+  partitionerIgnoreKeys: Boolean = false,
+  partitionerAdaptivePartitioningEnable: Boolean = true,
+  partitionerAvailabilityTimeout: FiniteDuration = 0.seconds,
+  metadataMaxIdle: FiniteDuration = 5.minutes,
 ) {
 
   def bindings: Map[String, AnyRef] = {
@@ -51,15 +51,15 @@ final case class ProducerConfig(
       (C.INTERCEPTOR_CLASSES_CONFIG, interceptorClasses.mkString(",")),
       (C.ENABLE_IDEMPOTENCE_CONFIG, idempotence.toString),
       (C.PARTITIONER_IGNORE_KEYS_CONFIG, partitionerIgnoreKeys.toString),
-      (C.PARTITIONER_ADPATIVE_PARTITIONING_ENABLE_CONFIG, partitionerAdaptivePartitioningEnable.toString),
+      (C.PARTITIONER_ADAPTIVE_PARTITIONING_ENABLE_CONFIG, partitionerAdaptivePartitioningEnable.toString),
       (C.PARTITIONER_AVAILABILITY_TIMEOUT_MS_CONFIG, partitionerAvailabilityTimeout.toMillis.toString),
       (C.METADATA_MAX_IDLE_CONFIG, metadataMaxIdle.toMillis.toString),
     )
 
     val transactions = transactionalId.toList.flatMap { id =>
       Map(
-        C.TRANSACTIONAL_ID_CONFIG    -> id,
-        C.TRANSACTION_TIMEOUT_CONFIG -> transactionTimeout.toMillis.toString
+        C.TRANSACTIONAL_ID_CONFIG -> id,
+        C.TRANSACTION_TIMEOUT_CONFIG -> transactionTimeout.toMillis.toString,
       )
     }
 
@@ -80,7 +80,7 @@ object ProducerConfig {
   val Default: ProducerConfig = ProducerConfig()
 
   private implicit val CompressionTypeFromConf: FromConf[CompressionType] = FromConf[CompressionType] { (conf, path) =>
-    val str   = conf.getString(path)
+    val str = conf.getString(path)
     val value = CompressionType.Values.find { _.toString.equalsIgnoreCase(str) }
     value.getOrElse {
       throw new ConfigException.BadValue(conf.origin(), path, s"Cannot parse CompressionType from $str")
@@ -103,11 +103,11 @@ object ProducerConfig {
 
   def apply(config: Config, default: => ProducerConfig): ProducerConfig = {
 
-    def get[T: FromConf](path: String, paths: String*) = {
+    def get[T: FromConf](path: String, paths: String*): Option[T] = {
       config.getOpt[T](path, paths*)
     }
 
-    def getDuration(path: String, pathMs: => String) = {
+    def getDuration(path: String, pathMs: => String): Option[FiniteDuration] = {
       val value =
         try get[FiniteDuration](path)
         catch { case _: ConfigException => None }
@@ -116,15 +116,15 @@ object ProducerConfig {
 
     val partitionerClass = {
 
-      def classOf(name: String) = {
+      def classOf(name: String): Try[Class[Partitioner]] = {
 
-        def classOfClassLoader = {
-          val thread      = Thread.currentThread()
+        def classOfClassLoader: Try[Class[?]] = {
+          val thread = Thread.currentThread()
           val classLoader = thread.getContextClassLoader
           Try { classLoader.loadClass(name) }
         }
 
-        def classOf = {
+        def classOf: Try[Class[?]] = {
           Try { Class.forName(name) }
         }
 
@@ -135,25 +135,25 @@ object ProducerConfig {
       }
 
       for {
-        name             <- get[String]("partitioner-class", "partitioner.class")
+        name <- get[String]("partitioner-class", "partitioner.class")
         partitionerClass <- classOf(name).toOption
       } yield partitionerClass
     }
 
     ProducerConfig(
-      common          = CommonConfig(config, default.common),
-      acks            = get[Acks]("acks") getOrElse default.acks,
-      bufferMemory    = get[Long]("buffer-memory", "buffer.memory") getOrElse default.bufferMemory,
+      common = CommonConfig(config, default.common),
+      acks = get[Acks]("acks") getOrElse default.acks,
+      bufferMemory = get[Long]("buffer-memory", "buffer.memory") getOrElse default.bufferMemory,
       compressionType = get[CompressionType]("compression-type", "compression.type") getOrElse default.compressionType,
-      retries         = get[Int]("retries") getOrElse default.retries,
-      batchSize       = get[Int]("batch-size", "batch.size") getOrElse default.batchSize,
+      retries = get[Int]("retries") getOrElse default.retries,
+      batchSize = get[Int]("batch-size", "batch.size") getOrElse default.batchSize,
       deliveryTimeout = getDuration("delivery-timeout", "delivery.timeout.ms") getOrElse default.deliveryTimeout,
-      linger          = getDuration("linger", "linger.ms") getOrElse default.linger,
-      maxBlock        = getDuration("max-block", "max.block.ms") getOrElse default.maxBlock,
-      maxRequestSize  = get[Int]("max-request-size", "max.request.size") getOrElse default.maxRequestSize,
+      linger = getDuration("linger", "linger.ms") getOrElse default.linger,
+      maxBlock = getDuration("max-block", "max.block.ms") getOrElse default.maxBlock,
+      maxRequestSize = get[Int]("max-request-size", "max.request.size") getOrElse default.maxRequestSize,
       maxInFlightRequestsPerConnection = get[Int](
         "max-in-flight-requests-per-connection",
-        "max.in.flight.requests.per.connection"
+        "max.in.flight.requests.per.connection",
       ) getOrElse default.maxInFlightRequestsPerConnection,
       partitionerClass = partitionerClass orElse default.partitionerClass,
       interceptorClasses =
@@ -163,8 +163,8 @@ object ProducerConfig {
       transactionTimeout =
         getDuration("transaction-timeout", "transaction.timeout.ms") getOrElse default.transactionTimeout,
       transactionalId = get[String]("transactional-id", "transactional.id") orElse default.transactionalId,
-      saslSupport     = SaslSupportConfig(config, default.saslSupport),
-      sslSupport      = SslSupportConfig(config),
+      saslSupport = SaslSupportConfig(config, default.saslSupport),
+      sslSupport = SslSupportConfig(config),
       partitionerIgnoreKeys =
         get[Boolean]("partitioner-ignore-keys", "partitioner.ignore.keys") getOrElse default.partitionerIgnoreKeys,
       partitionerAdaptivePartitioningEnable =
@@ -172,13 +172,13 @@ object ProducerConfig {
           .getOrElse(default.partitionerAdaptivePartitioningEnable),
       partitionerAvailabilityTimeout =
         getDuration("partitioner-availability-timeout", "partitioner.availability.timeout.ms").getOrElse(
-          default.partitionerAvailabilityTimeout
+          default.partitionerAvailabilityTimeout,
         ),
       metadataMaxIdle = getDuration("metadata-max-idle", "metadata.max.idle.ms").getOrElse(default.metadataMaxIdle),
     )
   }
 
-  //for binary compatibility
+  // for binary compatibility
   private[producer] def apply(
     common: CommonConfig,
     batchSize: Int,
@@ -198,26 +198,26 @@ object ProducerConfig {
     transactionalId: Option[String],
     saslSupport: SaslSupportConfig,
   ): ProducerConfig = new ProducerConfig(
-    common                           = common,
-    batchSize                        = batchSize,
-    deliveryTimeout                  = deliveryTimeout,
-    acks                             = acks,
-    linger                           = linger,
-    maxRequestSize                   = maxRequestSize,
-    maxBlock                         = maxBlock,
-    bufferMemory                     = bufferMemory,
-    compressionType                  = compressionType,
-    retries                          = retries,
+    common = common,
+    batchSize = batchSize,
+    deliveryTimeout = deliveryTimeout,
+    acks = acks,
+    linger = linger,
+    maxRequestSize = maxRequestSize,
+    maxBlock = maxBlock,
+    bufferMemory = bufferMemory,
+    compressionType = compressionType,
+    retries = retries,
     maxInFlightRequestsPerConnection = maxInFlightRequestsPerConnection,
-    partitionerClass                 = partitionerClass,
-    interceptorClasses               = interceptorClasses,
-    idempotence                      = idempotence,
-    transactionTimeout               = transactionTimeout,
-    transactionalId                  = transactionalId,
-    saslSupport                      = saslSupport,
+    partitionerClass = partitionerClass,
+    interceptorClasses = interceptorClasses,
+    idempotence = idempotence,
+    transactionTimeout = transactionTimeout,
+    transactionalId = transactionalId,
+    saslSupport = saslSupport,
   )
 
-  //for binary compatibility
+  // for binary compatibility
   private[producer] def apply(
     common: CommonConfig,
     batchSize: Int,
@@ -236,21 +236,21 @@ object ProducerConfig {
     transactionTimeout: FiniteDuration,
     transactionalId: Option[String],
   ): ProducerConfig = new ProducerConfig(
-    common                           = common,
-    batchSize                        = batchSize,
-    deliveryTimeout                  = deliveryTimeout,
-    acks                             = acks,
-    linger                           = linger,
-    maxRequestSize                   = maxRequestSize,
-    maxBlock                         = maxBlock,
-    bufferMemory                     = bufferMemory,
-    compressionType                  = compressionType,
-    retries                          = retries,
+    common = common,
+    batchSize = batchSize,
+    deliveryTimeout = deliveryTimeout,
+    acks = acks,
+    linger = linger,
+    maxRequestSize = maxRequestSize,
+    maxBlock = maxBlock,
+    bufferMemory = bufferMemory,
+    compressionType = compressionType,
+    retries = retries,
     maxInFlightRequestsPerConnection = maxInFlightRequestsPerConnection,
-    partitionerClass                 = partitionerClass,
-    interceptorClasses               = interceptorClasses,
-    idempotence                      = idempotence,
-    transactionTimeout               = transactionTimeout,
-    transactionalId                  = transactionalId,
+    partitionerClass = partitionerClass,
+    interceptorClasses = interceptorClasses,
+    idempotence = idempotence,
+    transactionTimeout = transactionTimeout,
+    transactionalId = transactionalId,
   )
 }

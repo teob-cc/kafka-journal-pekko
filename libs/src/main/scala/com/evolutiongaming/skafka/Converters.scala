@@ -1,31 +1,30 @@
 package com.evolutiongaming.skafka
 
-import java.lang.{Long => LongJ}
-import java.time.{Duration => DurationJ}
-import java.util.{Optional, Collection => CollectionJ, Map => MapJ, Set => SetJ, List => ListJ}
-
 import cats.Monad
-import cats.data.{NonEmptyList => Nel, NonEmptySet => Nes, NonEmptyMap => Nem}
+import cats.data.{NonEmptyList as Nel, NonEmptyMap as Nem, NonEmptySet as Nes}
 import cats.syntax.all.*
-import com.evolutiongaming.catshelper.CatsHelper._
+import com.evolutiongaming.catshelper.CatsHelper.*
 import com.evolutiongaming.catshelper.{ApplicativeThrowable, FromTry, MonadThrowable, ToTry}
-import org.apache.kafka.clients.consumer.{OffsetAndMetadata => OffsetAndMetadataJ}
-import org.apache.kafka.common.header.{Header => HeaderJ}
+import org.apache.kafka.clients.consumer.OffsetAndMetadata as OffsetAndMetadataJ
+import org.apache.kafka.common.header.Header as HeaderJ
 import org.apache.kafka.common.serialization.{Deserializer, Serializer}
-import org.apache.kafka.common.{PartitionInfo => PartitionInfoJ, TopicPartition => TopicPartitionJ}
+import org.apache.kafka.common.{PartitionInfo as PartitionInfoJ, TopicPartition as TopicPartitionJ}
 
-import scala.jdk.DurationConverters._
+import java.lang.Long as LongJ
+import java.time.Duration as DurationJ
+import java.util.{Collection as CollectionJ, List as ListJ, Map as MapJ, Optional, Set as SetJ}
 import scala.concurrent.duration.FiniteDuration
-import scala.jdk.CollectionConverters._
+import scala.jdk.CollectionConverters.*
+import scala.jdk.DurationConverters._
 
 object Converters {
 
   implicit class HeaderOps(val self: Header) extends AnyVal {
 
     def asJava: HeaderJ = new HeaderJ {
-      def value = self.value
+      def value: Array[Byte] = self.value
 
-      def key = self.key
+      def key: Metadata = self.key
     }
   }
 
@@ -70,11 +69,11 @@ object Converters {
         partition <- Partition.of[F](self.partition())
       } yield {
         PartitionInfo(
-          topicPartition  = TopicPartition(self.topic, partition),
-          leader          = self.leader,
-          replicas        = self.replicas.toList,
-          inSyncReplicas  = self.inSyncReplicas.toList,
-          offlineReplicas = self.offlineReplicas.toList
+          topicPartition = TopicPartition(self.topic, partition),
+          leader = self.leader,
+          replicas = self.replicas.toList,
+          inSyncReplicas = self.inSyncReplicas.toList,
+          offlineReplicas = self.offlineReplicas.toList,
         )
       }
     }
@@ -89,7 +88,7 @@ object Converters {
         self.leader,
         self.replicas.toArray,
         self.inSyncReplicas.toArray,
-        self.offlineReplicas.toArray
+        self.offlineReplicas.toArray,
       )
     }
   }
@@ -100,9 +99,10 @@ object Converters {
         .asScala
         .toList
         // at the moment we cannot use partial functions inside `AnyVal`, see: https://github.com/lampepfl/dotty/issues/18769
-        .traverseFilter { case (k, v) => 
-          if (k != null && (keepNullValues || v != null)) (ka(k), vb(v)).mapN((_, _).some)
-          else none[(A, B)].pure[F]
+        .traverseFilter {
+          case (k, v) =>
+            if (k != null && (keepNullValues || v != null)) (ka(k), vb(v)).mapN((_, _).some)
+            else none[(A, B)].pure[F]
         }
         .map(_.toMap)
     }
@@ -142,23 +142,29 @@ object Converters {
 
   implicit class ToBytesOps[F[_], A](val self: ToBytes[F, A]) extends AnyVal {
 
-    def asJava(implicit toTry: ToTry[F]): Serializer[A] = new Serializer[A] {
+    def asJava(
+      implicit
+      toTry: ToTry[F],
+    ): Serializer[A] = new Serializer[A] {
       override def configure(configs: MapJ[String, ?], isKey: Boolean): Unit = {}
 
       def serialize(topic: Topic, a: A): Array[Byte] = self(a, topic).toTry.get
 
-      override def close() = {}
+      override def close(): Unit = {}
     }
   }
 
   implicit class SkafkaFromBytesOps[F[_], A](val self: FromBytes[F, A]) extends AnyVal {
 
-    def asJava(implicit toTry: ToTry[F]): Deserializer[A] = new Deserializer[A] {
-      override def configure(configs: MapJ[String, ?], isKey: Boolean) = {}
+    def asJava(
+      implicit
+      toTry: ToTry[F],
+    ): Deserializer[A] = new Deserializer[A] {
+      override def configure(configs: MapJ[String, ?], isKey: Boolean): Unit = {}
 
       def deserialize(topic: Topic, bytes: Array[Byte]): A = self(bytes, topic).toTry.get
 
-      override def close() = {}
+      override def close(): Unit = {}
     }
   }
 
@@ -203,7 +209,7 @@ object Converters {
   }
 
   def committedOffsetsF[F[_]: MonadThrowable](
-    mapJ: MapJ[TopicPartitionJ, OffsetAndMetadataJ]
+    mapJ: MapJ[TopicPartitionJ, OffsetAndMetadataJ],
   ): F[Map[TopicPartition, OffsetAndMetadata]] = {
     Option(mapJ).fold {
       Map.empty[TopicPartition, OffsetAndMetadata].pure[F]
@@ -217,7 +223,7 @@ object Converters {
   }
 
   def asOffsetsAndMetadataJ(
-    offsets: Nem[TopicPartition, OffsetAndMetadata]
+    offsets: Nem[TopicPartition, OffsetAndMetadata],
   ): MapJ[TopicPartitionJ, OffsetAndMetadataJ] = {
     offsets.toSortedMap.asJavaMap(_.asJava, _.asJava)
   }
@@ -227,7 +233,7 @@ object Converters {
   }
 
   def partitionsInfoMapF[F[_]: MonadThrowable](
-    mapJ: MapJ[Topic, ListJ[PartitionInfoJ]]
+    mapJ: MapJ[Topic, ListJ[PartitionInfoJ]],
   ): F[Map[Topic, List[PartitionInfo]]] = {
     mapJ.asScalaMap(_.pure[F], partitionsInfoListF[F])
   }

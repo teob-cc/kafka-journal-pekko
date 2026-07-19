@@ -1,16 +1,16 @@
 package com.evolutiongaming.skafka.consumer
 
+import cats.implicits.*
 import cats.{Functor, Order}
-import cats.implicits._
-import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.*
 
 final case class ConsumerRecord[K, +V](
   topicPartition: TopicPartition,
   offset: Offset,
   timestampAndType: Option[TimestampAndType],
-  key: Option[WithSize[K]]   = None,
+  key: Option[WithSize[K]] = None,
   value: Option[WithSize[V]] = None,
-  headers: List[Header]      = Nil
+  headers: List[Header] = Nil,
 ) {
 
   def topic: Topic = topicPartition.topic
@@ -24,14 +24,14 @@ object ConsumerRecord {
     Order.whenEqual(
       Order.whenEqual(
         Order.by(_.topicPartition),
-        Order.by(_.key)
+        Order.by(_.key),
       ),
-      Order.by(_.offset)
+      Order.by(_.offset),
     )
   }
 
   implicit def functorConsumerRecord[K]: Functor[ConsumerRecord[K, *]] = new Functor[ConsumerRecord[K, *]] {
-    def map[A, B](fa: ConsumerRecord[K, A])(f: A => B) = {
+    def map[A, B](fa: ConsumerRecord[K, A])(f: A => B): ConsumerRecord[K, B] = {
       fa.copy(value = fa.value.map { _.map(f) })
     }
   }

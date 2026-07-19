@@ -1,14 +1,14 @@
 package com.evolutiongaming.skafka
 
-import cats.implicits._
+import cats.implicits.*
 
 import scala.util.control.NoStackTrace
 
 case class SkafkaError(
   msg: String,
-  cause: Option[Throwable] = None
+  cause: Option[Throwable] = None,
 ) extends RuntimeException(msg, cause.orNull)
-    with NoStackTrace
+with NoStackTrace
 
 object SkafkaError {
 

@@ -6,7 +6,7 @@ import org.apache.kafka.clients.producer.Producer
 import org.apache.kafka.common.{Metric, MetricName}
 
 import java.util
-import scala.jdk.CollectionConverters._
+import scala.jdk.CollectionConverters.*
 
 private[skafka] trait ClientMetricsProvider[F[_]] {
   def get: F[Seq[ClientMetric[F]]]
@@ -20,7 +20,7 @@ private[skafka] object ClientMetricsProvider {
     new ClientMetricsProviderImpl[F](producer.metrics())
 
   private class ClientMetricsProviderImpl[F[_]: Sync](source: => util.Map[MetricName, ? <: Metric])
-      extends ClientMetricsProvider[F] {
+  extends ClientMetricsProvider[F] {
 
     def get: F[Seq[ClientMetric[F]]] = Sync[F].delay {
       source.asScala.values.toSeq.map { m =>
@@ -30,7 +30,7 @@ private[skafka] object ClientMetricsProvider {
           metricName.group(),
           metricName.description(),
           metricName.tags().asScala.toMap,
-          Sync[F].delay(m.metricValue())
+          Sync[F].delay(m.metricValue()),
         )
       }
     }

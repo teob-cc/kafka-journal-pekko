@@ -5,11 +5,11 @@ import cats.effect.{MonadCancel, MonadCancelThrow, Resource}
 import cats.implicits.*
 import cats.{Applicative, Monad, ~>}
 import com.evolutiongaming.skafka.{ClientId, Topic}
-import com.evolutiongaming.smetrics.MetricsHelper.*
 import com.evolutiongaming.smetrics.*
+import com.evolutiongaming.smetrics.MetricsHelper.*
 
-import scala.concurrent.duration.FiniteDuration
 import scala.annotation.nowarn
+import scala.concurrent.duration.FiniteDuration
 
 trait ProducerMetrics[F[_]] {
 
@@ -32,6 +32,8 @@ trait ProducerMetrics[F[_]] {
   def partitions(topic: Topic, latency: FiniteDuration): F[Unit]
 
   def flush(latency: FiniteDuration): F[Unit]
+
+  def clientInstanceId(latency: FiniteDuration): F[Unit]
 
   private[producer] def exposeJavaMetrics(@nowarn producer: Producer[F]): Resource[F, Unit] = Resource.unit[F]
 }
@@ -68,49 +70,51 @@ object ProducerMetrics {
     override def partitions(topic: Topic, latency: FiniteDuration): F[Unit] = unit
 
     override def flush(latency: FiniteDuration): F[Unit] = unit
+
+    override def clientInstanceId(latency: FiniteDuration): F[Unit] = unit
   }
 
   def of[F[_]: Monad](
     registry: CollectorRegistry[F],
-    prefix: Prefix = Prefix.Default
+    prefix: Prefix = Prefix.Default,
   ): Resource[F, ClientId => ProducerMetrics[F]] = {
 
     val latencySummary = registry.summary(
-      name      = s"${prefix}_latency",
-      help      = "Latency in seconds",
+      name = s"${ prefix }_latency",
+      help = "Latency in seconds",
       quantiles = Quantiles.Default,
-      labels    = LabelNames("client", "topic", "type")
+      labels = LabelNames("client", "topic", "type"),
     )
 
     val bytesSummary = registry.summary(
-      name      = s"${prefix}_bytes",
-      help      = "Message size in bytes",
+      name = s"${ prefix }_bytes",
+      help = "Message size in bytes",
       quantiles = Quantiles(Quantile(1.0, 0.0001)),
-      labels    = LabelNames("client", "topic")
+      labels = LabelNames("client", "topic"),
     )
 
     val resultCounter = registry.counter(
-      name   = s"${prefix}_results",
-      help   = "Result: success or failure",
-      labels = LabelNames("client", "topic", "result")
+      name = s"${ prefix }_results",
+      help = "Result: success or failure",
+      labels = LabelNames("client", "topic", "result"),
     )
 
     val callLatency = registry.summary(
-      name      = s"${prefix}_call_latency",
-      help      = "Call latency in seconds",
+      name = s"${ prefix }_call_latency",
+      help = "Call latency in seconds",
       quantiles = Quantiles.Default,
-      labels    = LabelNames("client", "type")
+      labels = LabelNames("client", "type"),
     )
 
     val callCount =
-      registry.counter(name = s"${prefix}_calls", help = "Call count", labels = LabelNames("client", "type"))
+      registry.counter(name = s"${ prefix }_calls", help = "Call count", labels = LabelNames("client", "type"))
 
     for {
       latencySummary <- latencySummary
-      bytesSummary   <- bytesSummary
-      resultCounter  <- resultCounter
-      callLatency    <- callLatency
-      callCount      <- callCount
+      bytesSummary <- bytesSummary
+      resultCounter <- resultCounter
+      callLatency <- callLatency
+      callCount <- callCount
     } yield { (clientId: ClientId) =>
       new Summaries[F](latencySummary, bytesSummary, resultCounter, callLatency, callCount, clientId)
     }
@@ -119,39 +123,39 @@ object ProducerMetrics {
   @deprecated(message = "please use `histogramsPrometheusV1` instead", since = "17.3.0")
   def histograms[F[_]: Monad](
     registry: CollectorRegistry[F],
-    prefix: Prefix = Prefix.Default
+    prefix: Prefix = Prefix.Default,
   ): Resource[F, ClientId => ProducerMetrics[F]] = {
     val latencyHistogram = registry.histogram(
-      name    = s"${prefix}_latency",
-      help    = "Latency in seconds",
+      name = s"${ prefix }_latency",
+      help = "Latency in seconds",
       buckets = latencyBuckets,
-      labels  = LabelNames("client", "topic", "type")
+      labels = LabelNames("client", "topic", "type"),
     )
     val bytesHistogram = registry.histogram(
-      name    = s"${prefix}_bytes",
-      help    = "Message size in bytes",
+      name = s"${ prefix }_bytes",
+      help = "Message size in bytes",
       buckets = recordBytesBuckets,
-      labels  = LabelNames("client", "topic")
+      labels = LabelNames("client", "topic"),
     )
     val resultCounter = registry.counter(
-      name   = s"${prefix}_results",
-      help   = "Result: success or failure",
-      labels = LabelNames("client", "topic", "result")
+      name = s"${ prefix }_results",
+      help = "Result: success or failure",
+      labels = LabelNames("client", "topic", "result"),
     )
     val callLatency = registry.histogram(
-      name    = s"${prefix}_call_latency",
-      help    = "Call latency in seconds",
+      name = s"${ prefix }_call_latency",
+      help = "Call latency in seconds",
       buckets = latencyBuckets,
-      labels  = LabelNames("client", "type")
+      labels = LabelNames("client", "type"),
     )
     val callCount =
-      registry.counter(name = s"${prefix}_calls_total", help = "Call count", labels = LabelNames("client", "type"))
+      registry.counter(name = s"${ prefix }_calls_total", help = "Call count", labels = LabelNames("client", "type"))
     for {
       latencyHistogram <- latencyHistogram
-      bytesHistogram   <- bytesHistogram
-      resultCounter    <- resultCounter
-      callLatency      <- callLatency
-      callCount        <- callCount
+      bytesHistogram <- bytesHistogram
+      resultCounter <- resultCounter
+      callLatency <- callLatency
+      callCount <- callCount
     } yield { (clientId: ClientId) =>
       new Histograms[F](latencyHistogram, bytesHistogram, resultCounter, callLatency, callCount, clientId)
     }
@@ -159,39 +163,39 @@ object ProducerMetrics {
 
   def histogramsPrometheusV1[F[_]: Monad](
     registry: CollectorRegistry[F],
-    prefix: Prefix = Prefix.Default
+    prefix: Prefix = Prefix.Default,
   ): Resource[F, ClientId => ProducerMetrics[F]] = {
     val latencyHistogram = registry.histogram(
-      name    = s"${prefix}_latency",
-      help    = "Latency in seconds",
+      name = s"${ prefix }_latency",
+      help = "Latency in seconds",
       buckets = latencyBuckets,
-      labels  = LabelNames("client", "topic", "type")
+      labels = LabelNames("client", "topic", "type"),
     )
     val bytesHistogram = registry.histogram(
-      name    = s"${prefix}_bytes",
-      help    = "Message size in bytes",
+      name = s"${ prefix }_bytes",
+      help = "Message size in bytes",
       buckets = recordBytesBuckets,
-      labels  = LabelNames("client", "topic")
+      labels = LabelNames("client", "topic"),
     )
     val resultCounter = registry.counter(
-      name   = s"${prefix}_results",
-      help   = "Result: success or failure",
-      labels = LabelNames("client", "topic", "result")
+      name = s"${ prefix }_results",
+      help = "Result: success or failure",
+      labels = LabelNames("client", "topic", "result"),
     )
     val callLatency = registry.histogram(
-      name    = s"${prefix}_call_latency",
-      help    = "Call latency in seconds",
+      name = s"${ prefix }_call_latency",
+      help = "Call latency in seconds",
       buckets = latencyBuckets,
-      labels  = LabelNames("client", "type")
+      labels = LabelNames("client", "type"),
     )
     val callCount =
-      registry.counter(name = s"${prefix}_calls", help = "Call count", labels = LabelNames("client", "type"))
+      registry.counter(name = s"${ prefix }_calls", help = "Call count", labels = LabelNames("client", "type"))
     for {
       latencyHistogram <- latencyHistogram
-      bytesHistogram   <- bytesHistogram
-      resultCounter    <- resultCounter
-      callLatency      <- callLatency
-      callCount        <- callCount
+      bytesHistogram <- bytesHistogram
+      resultCounter <- resultCounter
+      callLatency <- callLatency
+      callCount <- callCount
     } yield { (clientId: ClientId) =>
       new Histograms[F](latencyHistogram, bytesHistogram, resultCounter, callLatency, callCount, clientId)
     }
@@ -206,7 +210,7 @@ object ProducerMetrics {
         200e-3, 500e-3,
         // second precision – starting from this point latencies are not "normal"
         1, 2, 5, 30, 60, // 1 minute – many timeouts are already triggered by this time
-      )
+      ),
     )
   private val recordBytesBuckets =
     Buckets(
@@ -217,7 +221,7 @@ object ProducerMetrics {
         128 * 1024,
         512 * 1024,
         1024 * 1024, // 1 MB – max record size
-      )
+      ),
     )
 
   private final class Summaries[F[_]: Monad](
@@ -226,7 +230,7 @@ object ProducerMetrics {
     resultCounter: LabelValues.`3`[Counter[F]],
     callLatency: LabelValues.`2`[Summary[F]],
     callCount: LabelValues.`2`[Counter[F]],
-    clientId: ClientId
+    clientId: ClientId,
   ) extends ProducerMetrics[F] {
     override def initTransactions(latency: FiniteDuration): F[Unit] = {
       observeLatency("init_transactions", latency)
@@ -273,6 +277,10 @@ object ProducerMetrics {
 
     override def flush(latency: FiniteDuration): F[Unit] = {
       observeLatency("flush", latency)
+    }
+
+    override def clientInstanceId(latency: FiniteDuration): F[Unit] = {
+      observeLatency("client_instance_id", latency)
     }
 
     private def sendMeasure(result: String, topic: Topic, latency: FiniteDuration): F[Unit] = {
@@ -344,6 +352,10 @@ object ProducerMetrics {
       observeLatency("flush", latency)
     }
 
+    override def clientInstanceId(latency: FiniteDuration): F[Unit] = {
+      observeLatency("client_instance_id", latency)
+    }
+
     private def sendMeasure(result: String, topic: Topic, latency: FiniteDuration): F[Unit] = {
       for {
         _ <- latencyHistogram.labels(clientId, topic, "send").observe(latency.toNanos.nanosToSeconds)
@@ -360,34 +372,13 @@ object ProducerMetrics {
 
   implicit class ProducerMetricsOps[F[_]](val self: ProducerMetrics[F]) extends AnyVal {
 
-    @deprecated("Use mapK(f, g) instead", "16.2.0")
-    def mapK[G[_]](f: F ~> G): ProducerMetrics[G] = new ProducerMetrics[G] {
-
-      def initTransactions(latency: FiniteDuration) = f(self.initTransactions(latency))
-
-      def beginTransaction = f(self.beginTransaction)
-
-      def sendOffsetsToTransaction(latency: FiniteDuration) = f(self.sendOffsetsToTransaction(latency))
-
-      def commitTransaction(latency: FiniteDuration) = f(self.commitTransaction(latency))
-
-      def abortTransaction(latency: FiniteDuration) = f(self.abortTransaction(latency))
-
-      def send(topic: Topic, latency: FiniteDuration, bytes: Int) = f(self.send(topic, latency, bytes))
-
-      def block(topic: Topic, latency: FiniteDuration) = f(self.block(topic, latency))
-
-      def failure(topic: Topic, latency: FiniteDuration) = f(self.failure(topic, latency))
-
-      def partitions(topic: Topic, latency: FiniteDuration) = f(self.partitions(topic, latency))
-
-      def flush(latency: FiniteDuration) = f(self.flush(latency))
-    }
-
     def mapK[G[_]](
       fg: F ~> G,
-      gf: G ~> F
-    )(implicit F: MonadCancel[F, Throwable], G: MonadCancel[G, Throwable]): ProducerMetrics[G] =
+      gf: G ~> F,
+    )(implicit
+      F: MonadCancel[F, Throwable],
+      G: MonadCancel[G, Throwable],
+    ): ProducerMetrics[G] =
       new MappedK(self, fg, gf)
   }
 
@@ -420,5 +411,7 @@ object ProducerMetrics {
 
     override def exposeJavaMetrics(producer: Producer[G]): Resource[G, Unit] =
       delegate.exposeJavaMetrics(producer.mapK[F](gf, fg)).mapK(fg)
+
+    override def clientInstanceId(latency: FiniteDuration): G[Unit] = fg(delegate.clientInstanceId(latency))
   }
 }

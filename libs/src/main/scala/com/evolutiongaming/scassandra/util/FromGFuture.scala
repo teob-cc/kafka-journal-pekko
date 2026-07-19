@@ -1,48 +1,53 @@
 package com.evolutiongaming.scassandra.util
 
 import cats.effect.{Async, Sync}
-import cats.implicits._
+import cats.implicits.*
 import com.evolutiongaming.concurrent.ExecutionContextExecutorServiceFactory
-import com.google.common.util.concurrent.{
-  FutureCallback,
-  Futures,
-  ListenableFuture
-}
+import com.google.common.util.concurrent.{FutureCallback, Futures, ListenableFuture}
 
 import java.util.concurrent.Executor
 
-/** Converts any `ListenableFuture[A]` from Google Guava into `F[A]` */
+/**
+ * Converts any `ListenableFuture[A]` from Google Guava into `F[A]`
+ */
 trait FromGFuture[F[_]] {
 
-  /** Suspends execution of `future` in `F[_]`.
-    *
-    * I.e. there is no need to call `Sync[F].delay` on the argument first and
-    * returned `F[A]` value could be reused as many times as needed.
-    *
-    * Example:
-    * {{{
-    * FromGFuture[F].apply { javaClient.executeAsync("SELECT name FROM users") }
-    * }}}
-    */
+  /**
+   * Suspends execution of `future` in `F[_]`.
+   *
+   * I.e. there is no need to call `Sync[F].delay` on the argument first and returned `F[A]` value
+   * could be reused as many times as needed.
+   *
+   * Example:
+   * {{{
+   * FromGFuture[F].apply { javaClient.executeAsync("SELECT name FROM users") }
+   * }}}
+   */
   def apply[A](future: => ListenableFuture[A]): F[A]
 }
 
 object FromGFuture {
 
-  def apply[F[_]](implicit F: FromGFuture[F]): FromGFuture[F] = F
+  def apply[F[_]](
+    implicit
+    F: FromGFuture[F],
+  ): FromGFuture[F] = F
 
   @deprecated("use lift1", "4.1.0")
-  def lift[F[_]: Async](implicit executor: Executor): FromGFuture[F] = fromExecutor(executor)
+  def lift[F[_]: Async](
+    implicit
+    executor: Executor,
+  ): FromGFuture[F] = fromExecutor(executor)
 
   implicit def lift1[F[_]: Async]: FromGFuture[F] = {
     class Lift1
     new Lift1 with FromGFuture[F] {
 
-      def apply[A](future: => ListenableFuture[A]) = {
+      override def apply[A](future: => ListenableFuture[A]): F[A] = {
         for {
-          executor    <- Async[F].executionContext
-          fromGFuture  = fromExecutor(ExecutionContextExecutorServiceFactory(executor))
-          result      <- fromGFuture { future }
+          executor <- Async[F].executionContext
+          fromGFuture = fromExecutor(ExecutionContextExecutorServiceFactory(executor))
+          result <- fromGFuture { future }
         } yield result
       }
     }
@@ -53,13 +58,13 @@ object FromGFuture {
 
     new FromExecutor with FromGFuture[F] {
 
-      def apply[A](future: => ListenableFuture[A]) = {
+      override def apply[A](future: => ListenableFuture[A]): F[A] = {
         for {
           future <- Sync[F].delay { future }
           result <- Async[F].async[A] { callback =>
             val futureCallback = new FutureCallback[A] {
-              def onSuccess(a: A) = callback(a.asRight)
-              def onFailure(e: Throwable) = callback(e.asLeft)
+              def onSuccess(a: A): Unit = callback(a.asRight)
+              def onFailure(e: Throwable): Unit = callback(e.asLeft)
             }
             Async[F].delay {
               Futures.addCallback(future, futureCallback, executor)

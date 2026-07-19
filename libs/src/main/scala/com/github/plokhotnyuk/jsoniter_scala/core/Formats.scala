@@ -5,10 +5,11 @@ import play.api.libs.json._
 import java.nio.charset.StandardCharsets
 import scala.util.control.NonFatal
 
-/** INTERNAL API
-  *
-  * It is an internal implementation for [[com.evolution.playjson.jsoniter.PlayJsonJsoniter]]
-  */
+/**
+ * INTERNAL API
+ *
+ * It is an internal implementation for [[com.evolution.playjson.jsoniter.PlayJsonJsoniter]]
+ */
 object Formats {
   private[Formats] val pool = new ThreadLocal[(Array[Byte], JsonReader, JsonWriter)] {
     override def initialValue(): (Array[Byte], JsonReader, JsonWriter) = {
@@ -18,7 +19,7 @@ object Formats {
   }
 
   def smallAsciiStringFormat[A](name: String, f: (JsonReader, A) => A, g: (JsonWriter, A) => Unit): Format[A] =
-     new JsonValueCodec[A] with Format[A] {
+    new JsonValueCodec[A] with Format[A] {
       override def reads(json: JsValue): JsResult[A] =
         try {
           val (buf, reader, _) = pool.get

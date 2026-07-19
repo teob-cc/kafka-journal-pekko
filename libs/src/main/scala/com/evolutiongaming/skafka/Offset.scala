@@ -1,7 +1,7 @@
 package com.evolutiongaming.skafka
 
 import cats.Show
-import cats.implicits._
+import cats.implicits.*
 import cats.kernel.Order
 import com.evolutiongaming.catshelper.ApplicativeThrowable
 
@@ -38,5 +38,9 @@ object Offset {
     }
   }
 
-  def unsafe[A](value: A)(implicit numeric: Numeric[A]): Offset = of[Try](numeric.toLong(value)).get
+  def unsafe[A](
+    value: A,
+  )(implicit
+    numeric: Numeric[A],
+  ): Offset = of[Try](numeric.toLong(value)).get
 }
