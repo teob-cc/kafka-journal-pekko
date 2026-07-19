@@ -14,9 +14,9 @@ import com.evolution.kafka.journal.eventual.cassandra.{EventualCassandra, Eventu
 import com.evolution.kafka.journal.eventual.{EventualJournal, EventualRead}
 import com.evolution.kafka.journal.util.PureConfigHelper.*
 import com.evolution.kafka.journal.util.{ActorSystemOf, Fail}
+import com.evolution.scassandra4.CassandraClusterOf
 import com.evolutiongaming.catshelper.*
 import com.evolutiongaming.retry.{Retry, Strategy}
-import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.evolutiongaming.skafka.Offset
 import com.typesafe.config.{Config, ConfigFactory}
 import org.scalatest.BeforeAndAfterAll

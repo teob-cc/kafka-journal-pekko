@@ -31,7 +31,7 @@ lazy val commonSettings = Seq(
   organizationHomepage := Some(url("https://github.com/lambda-house")),
   homepage := Some(url("https://github.com/lambda-house/kafka-journal-pekko")),
   startYear := Some(2018),
-  crossScalaVersions := Seq("3.8.2"),
+  crossScalaVersions := Seq("3.8.4"),
   scalaVersion := crossScalaVersions.value.head,
   scalacOptions ++= Seq(
     "-release:17",

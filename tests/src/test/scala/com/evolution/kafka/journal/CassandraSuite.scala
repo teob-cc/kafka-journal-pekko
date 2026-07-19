@@ -1,8 +1,8 @@
 package com.evolution.kafka.journal
 
 import cats.effect.IO
+import com.evolution.scassandra4.CassandraClusterOf
 import com.evolutiongaming.catshelper.CatsHelper.*
-import com.evolutiongaming.scassandra.CassandraClusterOf
 
 object CassandraSuite {
   import cats.effect.unsafe.implicits.global

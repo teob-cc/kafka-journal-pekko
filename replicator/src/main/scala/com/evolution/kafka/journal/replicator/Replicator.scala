@@ -12,12 +12,12 @@ import com.evolution.kafka.journal.util.*
 import com.evolution.kafka.journal.util.SkafkaHelper.*
 import com.evolution.scache.CacheMetrics
 import com.evolution.scache.CacheMetrics.Name
+import com.evolution.scassandra4.CassandraClusterOf
+import com.evolution.scassandra4.util.FromCompletionStage
 import com.evolutiongaming.catshelper.*
 import com.evolutiongaming.catshelper.ParallelHelper.*
 import com.evolutiongaming.random.Random
 import com.evolutiongaming.retry.{OnError, Retry, Sleep, Strategy}
-import com.evolutiongaming.scassandra.CassandraClusterOf
-import com.evolutiongaming.scassandra.util.FromGFuture
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerMetrics}
 import com.evolutiongaming.skafka.{Bytes as _, ClientId, Topic}
 import com.evolutiongaming.smetrics.CollectorRegistry
@@ -42,7 +42,7 @@ trait Replicator[F[_]] {
 object Replicator {
 
   def make[
-    F[_]: Async: Parallel: FromTry: ToTry: Fail: LogOf: KafkaConsumerOf: FromGFuture: MeasureDuration: JsonCodec,
+    F[_]: Async: Parallel: FromTry: ToTry: Fail: LogOf: KafkaConsumerOf: FromCompletionStage: MeasureDuration: JsonCodec,
   ](
     config: ReplicatorConfig,
     cassandraClusterOf: CassandraClusterOf[F],

@@ -12,11 +12,11 @@ import com.evolution.kafka.journal.pekko.persistence.KafkaJournalConfig
 import com.evolution.kafka.journal.replicator.{Replicator, ReplicatorConfig}
 import com.evolution.kafka.journal.util.*
 import com.evolution.kafka.journal.util.PureConfigHelper.*
+import com.evolution.scassandra4.CassandraClusterOf
+import com.evolution.scassandra4.util.FromCompletionStage
 import com.evolutiongaming.catshelper.*
 import com.evolutiongaming.catshelper.ParallelHelper.*
 import com.evolutiongaming.retry.Sleep
-import com.evolutiongaming.scassandra.CassandraClusterOf
-import com.evolutiongaming.scassandra.util.FromGFuture
 import com.evolutiongaming.skafka.Topic
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.actor.ActorSystem
@@ -45,7 +45,7 @@ object AppendReplicateApp extends IOApp {
     result.as(ExitCode.Success)
   }
 
-  private def runF[F[_]: Async: Parallel: FromGFuture: MeasureDuration: FromAttempt: FromTry: ToTry: Fail](
+  private def runF[F[_]: Async: Parallel: FromCompletionStage: MeasureDuration: FromAttempt: FromTry: ToTry: Fail](
     topic: Topic,
   )(implicit
     system: ActorSystem,

@@ -1,8 +1,8 @@
 package com.evolution.kafka.journal.eventual.cassandra
 
-import com.datastax.driver.core.ConsistencyLevel
+import com.datastax.oss.driver.api.core.DefaultConsistencyLevel as ConsistencyLevel
 import com.evolution.kafka.journal.cassandra.CassandraConsistencyConfig
-import com.evolutiongaming.scassandra.{CassandraConfig, QueryConfig}
+import com.evolution.scassandra4.{CassandraConfig, QueryConfig}
 import pureconfig.ConfigReader
 import pureconfig.generic.semiauto.deriveReader
 
@@ -12,9 +12,9 @@ import pureconfig.generic.semiauto.deriveReader
  * Specifies long time storage configuration and Cassandra client parameters.
  *
  * @param retries
- *   Number of retries in [[com.evolutiongaming.scassandra.NextHostRetryPolicy]]. It will retry
- *   doing a request on the same host if it timed out, or switch to another host if error happened,
- *   or the host was not available on a first attempt.
+ *   Number of retries in [[com.evolution.scassandra4.NextHostRetryPolicy]]. It will retry doing a
+ *   request on the same host if it timed out, or switch to another host if error happened, or the
+ *   host was not available on a first attempt.
  * @param segmentSize
  *   Number of records per one segment. The larger the number, the better the chance the recovery
  *   will hit the same partition, and be faster, but too large numbers are also will make larger

@@ -2,19 +2,17 @@ package com.evolution.kafka.journal.cassandra
 
 import CreateTables.Table
 import cats.data.{NonEmptyList as Nel, State}
-import cats.effect.Resource
 import cats.syntax.all.*
-import com.datastax.driver.core.{PreparedStatement, Row, Statement}
+import com.datastax.oss.driver.api.core.cql.{PreparedStatement, Row, Statement}
 import com.evolution.kafka.journal.eventual.cassandra.{
-  CassandraCluster,
   CassandraMetadata,
   CassandraSession,
   KeyspaceMetadata,
   TableMetadata,
 }
 import com.evolution.kafka.journal.util.StreamHelper.*
+import com.evolution.scassandra4
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.scassandra
 import com.evolutiongaming.sstream.Stream
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -92,21 +90,16 @@ class CreateTablesSpec extends AnyFunSuite {
       }
   }
 
-  implicit val cassandraCluster: CassandraCluster[F] = new CassandraCluster[F] {
-
-    def session: Resource[F, CassandraSession[F]] = throw NotImplemented
-
-    def metadata: F[CassandraMetadata[F]] = cassandraMetadata.pure[F]
-  }
-
   implicit val cassandraSession: CassandraSession[F] = new CassandraSession[F] {
 
     def prepare(query: String): F[PreparedStatement] = throw NotImplemented
 
-    def execute(statement: Statement): Stream[F, Row] =
+    def execute(statement: Statement[?]): Stream[F, Row] =
       Database.query.as(Stream.empty[F, Row]).toStream.flatten
 
-    def unsafe: scassandra.CassandraSession[F] = throw NotImplemented
+    def metadata: F[CassandraMetadata[F]] = cassandraMetadata.pure[F]
+
+    def unsafe: scassandra4.CassandraSession[F] = throw NotImplemented
   }
 
   implicit val cassandraSync: CassandraSync[F] = new CassandraSync[F] {

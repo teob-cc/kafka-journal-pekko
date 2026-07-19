@@ -3,15 +3,13 @@ package com.evolution.kafka.journal.eventual.cassandra
 import cats.Parallel
 import cats.effect.{Async, Resource}
 import cats.syntax.all.*
-import com.evolutiongaming.scassandra
-import com.evolutiongaming.scassandra.util.FromGFuture
-import com.evolutiongaming.scassandra.{CassandraClusterOf, CassandraConfig}
+import com.evolution.scassandra4
+import com.evolution.scassandra4.util.FromCompletionStage
+import com.evolution.scassandra4.{CassandraClusterOf, CassandraConfig}
 
 trait CassandraCluster[F[_]] {
 
   def session: Resource[F, CassandraSession[F]]
-
-  def metadata: F[CassandraMetadata[F]]
 }
 
 object CassandraCluster {
@@ -21,9 +19,8 @@ object CassandraCluster {
     F: CassandraCluster[F],
   ): CassandraCluster[F] = F
 
-  def apply[F[_]: Async: Parallel: FromGFuture](
-    cluster: scassandra.CassandraCluster[F],
-    retries: Int,
+  def apply[F[_]: Async: Parallel: FromCompletionStage](
+    cluster: scassandra4.CassandraCluster[F],
   ): CassandraCluster[F] = new CassandraCluster[F] {
 
     def session: Resource[F, CassandraSession[F]] = {
@@ -31,29 +28,22 @@ object CassandraCluster {
         session <- cluster.connect
         session <- CassandraSession.make[F](session)
       } yield {
-        CassandraSession(session, retries)
-      }
-    }
-
-    def metadata: F[CassandraMetadata[F]] = {
-      for {
-        metadata <- cluster.metadata
-      } yield {
-        CassandraMetadata[F](metadata)
+        CassandraSession(session)
       }
     }
   }
 
-  def make[F[_]: Async: Parallel: FromGFuture](
+  def make[F[_]: Async: Parallel: FromCompletionStage](
     config: CassandraConfig,
     cassandraClusterOf: CassandraClusterOf[F],
     retries: Int,
   ): Resource[F, CassandraCluster[F]] = {
 
     for {
-      cluster <- cassandraClusterOf(config)
+      // driver 4 configures the retry policy at session level rather than per statement
+      cluster <- cassandraClusterOf(config.copy(retries = retries.some))
     } yield {
-      apply[F](cluster, retries)
+      apply[F](cluster)
     }
   }
 }

@@ -10,8 +10,8 @@ import com.evolution.kafka.journal.cassandra.{CassandraConsistencyConfig, Settin
 import com.evolution.kafka.journal.eventual.cassandra.*
 import com.evolution.kafka.journal.util.ActorSystemOf
 import com.evolution.kafka.journal.util.PureConfigHelper.*
+import com.evolution.scassandra4.CassandraClusterOf
 import com.evolutiongaming.catshelper.{FromFuture, LogOf}
-import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.actor.ActorSystem
 import org.scalatest.BeforeAndAfterAll

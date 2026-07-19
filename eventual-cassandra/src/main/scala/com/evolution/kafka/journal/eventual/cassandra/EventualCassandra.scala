@@ -11,9 +11,9 @@ import com.evolution.kafka.journal.eventual.cassandra.JournalStatements.JournalR
 import com.evolution.kafka.journal.util.CatsHelper.*
 import com.evolution.kafka.journal.util.StreamHelper.*
 import com.evolution.kafka.journal.{cassandra as _, *}
+import com.evolution.scassandra4.util.FromCompletionStage
+import com.evolution.scassandra4.{CassandraClusterOf, TableName}
 import com.evolutiongaming.catshelper.{Log, LogOf, MeasureDuration, ToTry}
-import com.evolutiongaming.scassandra.util.FromGFuture
-import com.evolutiongaming.scassandra.{CassandraClusterOf, TableName}
 import com.evolutiongaming.skafka.{Offset, Partition, Topic}
 import com.evolutiongaming.sstream.Stream
 
@@ -36,7 +36,7 @@ object EventualCassandra {
    *
    * Underlying schema is automatically created or migrated if required.
    */
-  def make[F[_]: Async: Parallel: ToTry: LogOf: FromGFuture: MeasureDuration: JsonCodec.Decode](
+  def make[F[_]: Async: Parallel: ToTry: LogOf: FromCompletionStage: MeasureDuration: JsonCodec.Decode](
     config: EventualCassandraConfig,
     origin: Option[Origin],
     metrics: Option[EventualJournal.Metrics[F]],

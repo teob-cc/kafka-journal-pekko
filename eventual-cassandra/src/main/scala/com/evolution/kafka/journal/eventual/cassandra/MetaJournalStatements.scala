@@ -12,8 +12,8 @@ import com.evolution.kafka.journal.cassandra.PartitionOffsetExtension.*
 import com.evolution.kafka.journal.cassandra.SeqNrExtension.*
 import com.evolution.kafka.journal.eventual.cassandra.CassandraHelper.*
 import com.evolution.kafka.journal.util.TemporalHelper.*
-import com.evolutiongaming.scassandra.TableName
-import com.evolutiongaming.scassandra.syntax.*
+import com.evolution.scassandra4.TableName
+import com.evolution.scassandra4.syntax.*
 import com.evolutiongaming.skafka.Topic
 import com.evolutiongaming.sstream.Stream
 

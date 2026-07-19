@@ -8,9 +8,9 @@ import com.evolution.kafka.journal.conversions.{ConversionMetrics, KafkaRead, Ka
 import com.evolution.kafka.journal.eventual.cassandra.EventualCassandra
 import com.evolution.kafka.journal.eventual.{EventualJournal, EventualRead}
 import com.evolution.kafka.journal.util.Fail
+import com.evolution.scassandra4.CassandraClusterOf
+import com.evolution.scassandra4.util.FromCompletionStage
 import com.evolutiongaming.catshelper.*
-import com.evolutiongaming.scassandra.CassandraClusterOf
-import com.evolutiongaming.scassandra.util.FromGFuture
 import com.evolutiongaming.skafka.consumer.ConsumerMetrics
 import com.evolutiongaming.skafka.producer.ProducerMetrics
 import com.evolutiongaming.skafka.{ClientId, CommonConfig}
@@ -34,7 +34,7 @@ object JournalAdapter {
   def make[
     F[
       _,
-    ]: Async: Parallel: LogOf: RandomIdOf: FromGFuture: MeasureDuration: ToTry: FromTry: FromJsResult: Fail: JsonCodec,
+    ]: Async: Parallel: LogOf: RandomIdOf: FromCompletionStage: MeasureDuration: ToTry: FromTry: FromJsResult: Fail: JsonCodec,
     A,
   ](
     toKey: ToKey[F],
@@ -65,7 +65,7 @@ object JournalAdapter {
   def makeWithJournals[
     F[
       _,
-    ]: Async: Parallel: LogOf: RandomIdOf: FromGFuture: MeasureDuration: ToTry: FromTry: FromJsResult: Fail: JsonCodec,
+    ]: Async: Parallel: LogOf: RandomIdOf: FromCompletionStage: MeasureDuration: ToTry: FromTry: FromJsResult: Fail: JsonCodec,
     A,
   ](
     toKey: ToKey[F],

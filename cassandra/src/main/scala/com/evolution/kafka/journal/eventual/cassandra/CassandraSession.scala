@@ -3,27 +3,33 @@ package com.evolution.kafka.journal.eventual.cassandra
 import cats.Parallel
 import cats.effect.{Async, Concurrent, Resource}
 import cats.syntax.all.*
-import com.datastax.driver.core.policies.{LoggingRetryPolicy, RetryPolicy}
-import com.datastax.driver.core.{ResultSet as _, *}
+import com.datastax.oss.driver.api.core.cql.{PreparedStatement, Row, SimpleStatement, Statement}
 import com.evolution.kafka.journal.JournalError
 import com.evolution.kafka.journal.util.StreamHelper.*
 import com.evolution.scache.Cache
+import com.evolution.scassandra4
+import com.evolution.scassandra4.StreamingCassandraSession.*
+import com.evolution.scassandra4.util.FromCompletionStage
 import com.evolutiongaming.catshelper.{MonadThrowable, Runtime}
-import com.evolutiongaming.scassandra
-import com.evolutiongaming.scassandra.NextHostRetryPolicy
-import com.evolutiongaming.scassandra.syntax.*
-import com.evolutiongaming.scassandra.util.FromGFuture
 import com.evolutiongaming.sstream.Stream
 
 trait CassandraSession[F[_]] {
 
   def prepare(query: String): F[PreparedStatement]
 
-  def execute(statement: Statement): Stream[F, Row]
+  def execute(statement: Statement[?]): Stream[F, Row]
 
-  def unsafe: scassandra.CassandraSession[F]
+  /**
+   * Fresh schema metadata snapshot of the current session.
+   *
+   * Driver 4 metadata is an immutable snapshot taken at the call, unlike the live view of driver 3,
+   * hence metadata lives on the session rather than on [[CassandraCluster]].
+   */
+  def metadata: F[CassandraMetadata[F]]
 
-  final def execute(statement: String): Stream[F, Row] = execute(new SimpleStatement(statement))
+  def unsafe: scassandra4.CassandraSession[F]
+
+  final def execute(statement: String): Stream[F, Row] = execute(SimpleStatement.newInstance(statement))
 }
 
 object CassandraSession {
@@ -33,36 +39,38 @@ object CassandraSession {
     F: CassandraSession[F],
   ): CassandraSession[F] = F
 
+  // retries are not decorated per statement anymore: driver 4 configures the retry policy
+  // at session level, see the CassandraConfig.retries -> NextHostRetryPolicy translation
   def apply[F[_]](
     session: CassandraSession[F],
-    retries: Int,
     trace: Boolean = false,
   ): CassandraSession[F] = {
-    val retryPolicy = new LoggingRetryPolicy(NextHostRetryPolicy(retries))
-    session.configured(retryPolicy, trace)
+    session.configured(trace)
   }
 
-  private def apply[F[_]: Async: FromGFuture](
-    session: scassandra.CassandraSession[F],
+  private def apply[F[_]: Async: FromCompletionStage](
+    session: scassandra4.CassandraSession[F],
   ): CassandraSession[F] = {
     new CassandraSession[F] {
 
       def prepare(query: String): F[PreparedStatement] = session.prepare(query)
 
-      def execute(statement: Statement): Stream[F, Row] = {
-        val execute = session.execute(statement)
+      def execute(statement: Statement[?]): Stream[F, Row] = session.executeStream(statement)
+
+      def metadata: F[CassandraMetadata[F]] = {
         for {
-          resultSet <- execute.toStream
-          row <- ResultSet[F](resultSet)
-        } yield row
+          metadata <- session.metadata
+        } yield {
+          CassandraMetadata[F](scassandra4.Metadata[F](metadata))
+        }
       }
 
-      def unsafe: scassandra.CassandraSession[F] = session
+      def unsafe: scassandra4.CassandraSession[F] = session
     }
   }
 
-  def make[F[_]: Async: Parallel: FromGFuture](
-    session: scassandra.CassandraSession[F],
+  def make[F[_]: Async: Parallel: FromCompletionStage](
+    session: scassandra4.CassandraSession[F],
   ): Resource[F, CassandraSession[F]] = {
     apply[F](session)
       .enhanceError
@@ -72,7 +80,6 @@ object CassandraSession {
   implicit class CassandraSessionOps[F[_]](val self: CassandraSession[F]) extends AnyVal {
 
     def configured(
-      retryPolicy: RetryPolicy,
       trace: Boolean,
     ): CassandraSession[F] = new CassandraSession[F] {
 
@@ -80,15 +87,16 @@ object CassandraSession {
         self.prepare(query)
       }
 
-      def execute(statement: Statement): Stream[F, Row] = {
+      def execute(statement: Statement[?]): Stream[F, Row] = {
         val configured = statement
-          .setRetryPolicy(retryPolicy)
           .setIdempotent(true)
-          .trace(trace)
+          .setTracing(trace)
         self.execute(configured)
       }
 
-      def unsafe: scassandra.CassandraSession[F] = self.unsafe
+      def metadata: F[CassandraMetadata[F]] = self.metadata
+
+      def unsafe: scassandra4.CassandraSession[F] = self.unsafe
     }
 
     def cachePrepared(implicit
@@ -105,9 +113,11 @@ object CassandraSession {
             cache.getOrUpdate(query) { self.prepare(query) }
           }
 
-          def execute(statement: Statement): Stream[F, Row] = self.execute(statement)
+          def execute(statement: Statement[?]): Stream[F, Row] = self.execute(statement)
 
-          def unsafe: scassandra.CassandraSession[F] = self.unsafe
+          def metadata: F[CassandraMetadata[F]] = self.metadata
+
+          def unsafe: scassandra4.CassandraSession[F] = self.unsafe
         }
       }
     }
@@ -129,13 +139,19 @@ object CassandraSession {
             .handleErrorWith { a => error(s"prepare query: $query", a) }
         }
 
-        def execute(statement: Statement): Stream[F, Row] = {
+        def execute(statement: Statement[?]): Stream[F, Row] = {
           self
             .execute(statement)
             .handleErrorWith { (a: Throwable) => error[Row](s"execute statement: $statement", a).toStream }
         }
 
-        def unsafe: scassandra.CassandraSession[F] = self.unsafe
+        def metadata: F[CassandraMetadata[F]] = {
+          self
+            .metadata
+            .handleErrorWith { a => error("metadata", a) }
+        }
+
+        def unsafe: scassandra4.CassandraSession[F] = self.unsafe
       }
     }
   }

@@ -2,7 +2,7 @@ package com.evolution.kafka.journal.eventual.cassandra
 
 import cats.FlatMap
 import cats.syntax.all.*
-import com.evolutiongaming.scassandra
+import com.evolution.scassandra4
 
 trait CassandraMetadata[F[_]] {
 
@@ -11,7 +11,7 @@ trait CassandraMetadata[F[_]] {
 
 object CassandraMetadata {
 
-  def apply[F[_]: FlatMap](metadata: scassandra.Metadata[F]): CassandraMetadata[F] = new CassandraMetadata[F] {
+  def apply[F[_]: FlatMap](metadata: scassandra4.Metadata[F]): CassandraMetadata[F] = new CassandraMetadata[F] {
 
     def keyspace(name: String): F[Option[KeyspaceMetadata[F]]] = {
       for {
@@ -33,7 +33,7 @@ trait KeyspaceMetadata[F[_]] {
 
 object KeyspaceMetadata {
 
-  def apply[F[_]: FlatMap](metadata: scassandra.KeyspaceMetadata[F]): KeyspaceMetadata[F] = new KeyspaceMetadata[F] {
+  def apply[F[_]: FlatMap](metadata: scassandra4.KeyspaceMetadata[F]): KeyspaceMetadata[F] = new KeyspaceMetadata[F] {
 
     def table(name: String): F[Option[TableMetadata]] = {
       for {

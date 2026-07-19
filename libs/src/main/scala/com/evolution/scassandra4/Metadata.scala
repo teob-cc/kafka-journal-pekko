@@ -1,8 +1,7 @@
 package com.evolution.scassandra4
 
-import cats.effect.Sync
 import cats.syntax.all.*
-import cats.{FlatMap, ~>}
+import cats.{Applicative, FlatMap, ~>}
 import com.datastax.oss.driver.api.core.metadata.Metadata as MetadataJ
 import com.datastax.oss.driver.api.core.metadata.schema.{
   KeyspaceMetadata as KeyspaceMetadataJ,
@@ -16,8 +15,8 @@ import scala.jdk.javaapi.OptionConverters
  * Mirrors `com.evolutiongaming.scassandra.Metadata` over driver 4's metadata API.
  *
  * Unlike driver 3's live `Metadata`, driver 4's is an immutable snapshot — construct a fresh
- * instance (via `CassandraSession.metadata`) whenever current schema state is needed.
- * `clusterName` is optional in driver 4; `userTypes` is not mirrored (unused downstream).
+ * instance (via `CassandraSession.metadata`) whenever current schema state is needed. `clusterName`
+ * is optional in driver 4; `userTypes` is not mirrored (unused downstream).
  */
 trait Metadata[F[_]] {
 
@@ -30,20 +29,20 @@ trait Metadata[F[_]] {
 
 object Metadata {
 
-  def apply[F[_]: Sync](metadata: MetadataJ): Metadata[F] = {
+  def apply[F[_]: Applicative](metadata: MetadataJ): Metadata[F] = {
     new Metadata[F] {
 
-      val clusterName: F[Option[String]] = Sync[F].delay {
+      def clusterName: F[Option[String]] = Applicative[F].pure {
         OptionConverters.toScala(metadata.getClusterName)
       }
 
-      def keyspace(name: String): F[Option[KeyspaceMetadata[F]]] = Sync[F].delay {
+      def keyspace(name: String): F[Option[KeyspaceMetadata[F]]] = Applicative[F].pure {
         OptionConverters
           .toScala(metadata.getKeyspace(name))
           .map { keyspace => KeyspaceMetadata[F](keyspace) }
       }
 
-      val keyspaces: F[List[KeyspaceMetadata[F]]] = Sync[F].delay {
+      def keyspaces: F[List[KeyspaceMetadata[F]]] = Applicative[F].pure {
         metadata
           .getKeyspaces
           .values
@@ -104,22 +103,22 @@ trait KeyspaceMetadata[F[_]] {
 
 object KeyspaceMetadata {
 
-  def apply[F[_]: Sync](keyspaceMetadata: KeyspaceMetadataJ): KeyspaceMetadata[F] = {
+  def apply[F[_]: Applicative](keyspaceMetadata: KeyspaceMetadataJ): KeyspaceMetadata[F] = {
     new KeyspaceMetadata[F] {
 
       val name: String = keyspaceMetadata.getName.asInternal
 
-      val schema: F[String] = Sync[F].delay { keyspaceMetadata.describeWithChildren(true) }
+      def schema: F[String] = Applicative[F].pure { keyspaceMetadata.describeWithChildren(true) }
 
-      val asCql: F[String] = Sync[F].delay { keyspaceMetadata.describe(true) }
+      def asCql: F[String] = Applicative[F].pure { keyspaceMetadata.describe(true) }
 
-      def table(name: String): F[Option[TableMetadata]] = Sync[F].delay {
+      def table(name: String): F[Option[TableMetadata]] = Applicative[F].pure {
         OptionConverters
           .toScala(keyspaceMetadata.getTable(name))
           .map { table => TableMetadata(table) }
       }
 
-      val tables: F[List[TableMetadata]] = Sync[F].delay {
+      def tables: F[List[TableMetadata]] = Applicative[F].pure {
         keyspaceMetadata
           .getTables
           .values
@@ -132,7 +131,7 @@ object KeyspaceMetadata {
 
       val virtual: Boolean = keyspaceMetadata.isVirtual
 
-      val replication: F[Map[String, String]] = Sync[F].delay {
+      val replication: F[Map[String, String]] = Applicative[F].pure {
         keyspaceMetadata.getReplication.asScala.toMap
       }
     }

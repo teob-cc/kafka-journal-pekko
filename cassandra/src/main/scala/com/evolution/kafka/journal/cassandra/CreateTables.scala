@@ -5,7 +5,7 @@ import cats.syntax.all.*
 import cats.{Monad, Order}
 import com.evolution.kafka.journal.cassandra.CassandraSync
 import com.evolution.kafka.journal.eventual.cassandra.CassandraHelper.*
-import com.evolution.kafka.journal.eventual.cassandra.{CassandraCluster, CassandraSession, KeyspaceMetadata}
+import com.evolution.kafka.journal.eventual.cassandra.{CassandraSession, KeyspaceMetadata}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 
 /**
@@ -29,7 +29,7 @@ private[journal] object CreateTables { self =>
     F: CreateTables[F],
   ): CreateTables[F] = F
 
-  def apply[F[_]: Monad: CassandraCluster: CassandraSession: CassandraSync](
+  def apply[F[_]: Monad: CassandraSession: CassandraSync](
     log: Log[F],
   ): CreateTables[F] = new CreateTables[F] {
 
@@ -59,7 +59,7 @@ private[journal] object CreateTables { self =>
 
       for {
         tables <- tables.distinct.pure[F]
-        metadata <- CassandraCluster[F].metadata
+        metadata <- CassandraSession[F].metadata
         keyspace <- metadata.keyspace(keyspace)
         tables1 <- keyspace.fold(tables.toList.pure[F])(missing)
         fresh <- tables1.toNel.fold(false.pure[F])(create)
@@ -67,7 +67,7 @@ private[journal] object CreateTables { self =>
     }
   }
 
-  def of[F[_]: Monad: CassandraCluster: CassandraSession: CassandraSync: LogOf]: F[CreateTables[F]] = {
+  def of[F[_]: Monad: CassandraSession: CassandraSync: LogOf]: F[CreateTables[F]] = {
     for {
       log <- LogOf[F].apply(self.getClass)
     } yield {

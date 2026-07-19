@@ -3,9 +3,9 @@ package com.evolutiongaming.cassandra.sync
 import cats.effect.{Clock, Resource, Temporal}
 import cats.implicits._
 import cats.{FlatMap, ~>}
+import com.evolution.scassandra4._
+import com.evolution.scassandra4.syntax._
 import com.evolutiongaming.catshelper.ClockHelper._
-import com.evolutiongaming.scassandra._
-import com.evolutiongaming.scassandra.syntax._
 
 import java.time.Instant
 import scala.concurrent.TimeoutException

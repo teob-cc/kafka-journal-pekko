@@ -4,7 +4,7 @@ import cats.syntax.all.*
 import cats.{Applicative, Eq, Id, Order, Show}
 import com.evolution.kafka.journal.util.Fail
 import com.evolution.kafka.journal.util.Fail.implicits.*
-import com.evolutiongaming.scassandra.*
+import com.evolution.scassandra4.*
 import pureconfig.error.{CannotParse, ConfigReaderFailures}
 import pureconfig.{ConfigCursor, ConfigReader}
 

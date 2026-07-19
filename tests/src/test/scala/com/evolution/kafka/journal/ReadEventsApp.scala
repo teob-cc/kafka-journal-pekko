@@ -10,9 +10,9 @@ import com.evolution.kafka.journal.TestJsonCodec.instance
 import com.evolution.kafka.journal.cassandra.KeyspaceConfig
 import com.evolution.kafka.journal.eventual.cassandra.*
 import com.evolution.kafka.journal.util.Fail
+import com.evolution.scassandra4.util.FromCompletionStage
+import com.evolution.scassandra4.{AuthenticationConfig, CassandraClusterOf, CassandraConfig}
 import com.evolutiongaming.catshelper.*
-import com.evolutiongaming.scassandra.util.FromGFuture
-import com.evolutiongaming.scassandra.{AuthenticationConfig, CassandraClusterOf, CassandraConfig}
 import com.evolutiongaming.skafka.CommonConfig
 import com.evolutiongaming.skafka.consumer.ConsumerConfig
 import com.evolutiongaming.skafka.producer.{Acks, ProducerConfig}
@@ -26,7 +26,7 @@ object ReadEventsApp extends IOApp {
     runF[IO].as(ExitCode.Success)
   }
 
-  private def runF[F[_]: Async: Parallel: FromGFuture: FromTry: ToTry: Fail]: F[Unit] = {
+  private def runF[F[_]: Async: Parallel: FromCompletionStage: FromTry: ToTry: Fail]: F[Unit] = {
 
     for {
       logOf <- LogOf.slf4j[F]
@@ -45,7 +45,7 @@ object ReadEventsApp extends IOApp {
   }
 
   private def runF[
-    F[_]: Async: Parallel: LogOf: FromGFuture: MeasureDuration: FromTry: ToTry: FromAttempt: FromJsResult: Fail,
+    F[_]: Async: Parallel: LogOf: FromCompletionStage: MeasureDuration: FromTry: ToTry: FromAttempt: FromJsResult: Fail,
   ](
     log: Log[F],
   ): F[Unit] = {
@@ -64,7 +64,7 @@ object ReadEventsApp extends IOApp {
     val eventualCassandraConfig = EventualCassandraConfig(
       schema = SchemaConfig(keyspace = KeyspaceConfig(name = "keyspace", autoCreate = false), autoCreate = false),
       client = CassandraConfig(
-        contactPoints = com.evolutiongaming.nel.Nel("127.0.0.1"),
+        contactPoints = cats.data.NonEmptyList.of("127.0.0.1"),
         authentication = AuthenticationConfig(username = "username", password = "password").some,
       ),
     )

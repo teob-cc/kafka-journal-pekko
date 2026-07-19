@@ -1,6 +1,6 @@
 package com.evolution.kafka.journal.cassandra
 
-import com.datastax.driver.core.ConsistencyLevel
+import com.datastax.oss.driver.api.core.DefaultConsistencyLevel as ConsistencyLevel
 import pureconfig.ConfigReader
 import pureconfig.generic.semiauto.deriveReader
 

@@ -12,20 +12,19 @@ import scala.annotation.nowarn
 
 /**
  * Port of `com.evolutiongaming.scassandra.NextHostRetryPolicy` (driver 3) to driver 4's
- * config-class retry SPI: instantiated reflectively by the driver via the
- * `(DriverContext, String)` constructor, configured through
- * `advanced.retry-policy.class` plus the custom [[NextHostRetryPolicy.Retries]] option — see
- * [[CreateDriverConfigLoader]], which sets both when `CassandraConfig.retries` is defined.
+ * config-class retry SPI: instantiated reflectively by the driver via the `(DriverContext, String)`
+ * constructor, configured through `advanced.retry-policy.class` plus the custom
+ * [[NextHostRetryPolicy.Retries]] option — see [[CreateDriverConfigLoader]], which sets both when
+ * `CassandraConfig.retries` is defined.
  *
  * Semantics of the driver 3 original, expressed in driver 4 verdicts:
  *   - unavailable: try the next node on the first attempt, then retry the same node
  *   - read/write timeout: retry the same node
  *   - request aborted or coordinator error: try the next node
  *
- * all bounded by `retries` (i.e. up to `retries + 1` executions). Logging replaces the
- * driver 3 `LoggingRetryPolicy` wrapper. Idempotence is enforced by the driver core, which
- * consults the policy for aborted requests and error responses only when a statement is
- * idempotent.
+ * all bounded by `retries` (i.e. up to `retries + 1` executions). Logging replaces the driver 3
+ * `LoggingRetryPolicy` wrapper. Idempotence is enforced by the driver core, which consults the
+ * policy for aborted requests and error responses only when a statement is idempotent.
  */
 @nowarn("cat=deprecation") // driver 4 keeps the pre-verdict RetryPolicy methods abstract but deprecated
 final class NextHostRetryPolicy(context: DriverContext, profileName: String) extends RetryPolicy {
@@ -112,7 +111,9 @@ final class NextHostRetryPolicy(context: DriverContext, profileName: String) ext
 
 object NextHostRetryPolicy {
 
-  /** Number of retries after the initial attempt, read from the execution profile. */
+  /**
+   * Number of retries after the initial attempt, read from the execution profile.
+   */
   val Retries: DriverOption = new DriverOption {
     def getPath: String = "advanced.retry-policy.retries"
   }

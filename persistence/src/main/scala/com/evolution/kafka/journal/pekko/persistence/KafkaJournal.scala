@@ -7,11 +7,11 @@ import com.evolution.kafka.journal.*
 import com.evolution.kafka.journal.pekko.OriginExtension
 import com.evolution.kafka.journal.util.CatsHelper.*
 import com.evolution.kafka.journal.util.PureConfigHelper.*
+import com.evolution.scassandra4.CassandraClusterOf
 import com.evolutiongaming.catshelper.*
 import com.evolutiongaming.catshelper.CatsHelper.*
 import com.evolutiongaming.retry.Retry.implicits.*
 import com.evolutiongaming.retry.{OnError, Strategy}
-import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.typesafe.config.Config
 import org.apache.pekko.actor.ActorSystem
 import org.apache.pekko.persistence.journal.AsyncWriteJournal

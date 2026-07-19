@@ -12,9 +12,9 @@ import com.evolution.kafka.journal.cassandra.{
   SettingsCassandra,
 }
 import com.evolution.kafka.journal.{Origin, Settings}
+import com.evolution.scassandra4.TableName
+import com.evolution.scassandra4.syntax.toCqlOps
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.scassandra.TableName
-import com.evolutiongaming.scassandra.syntax.toCqlOps
 
 /**
  * Creates a new schema, or migrates to the latest schema version, if it already exists.

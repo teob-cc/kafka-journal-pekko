@@ -21,7 +21,7 @@ import scala.collection.immutable.Queue
  * outer scope. Not using a result of an inner operation (e.g. forking a fiber) will not block.
  *
  * @example
- *   This will block {{{ rw.read.use(_ => rw.write.use(…)) }}}
+ *   This will block {{{rw.read.use(_ => rw.write.use(…))}}}
  *
  * Cases that will currently block:
  *   - `write` in `read` or `write`.

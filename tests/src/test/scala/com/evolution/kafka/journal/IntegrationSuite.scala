@@ -7,8 +7,8 @@ import com.evolution.kafka.journal.IOSuite.*
 import com.evolution.kafka.journal.TestJsonCodec.instance
 import com.evolution.kafka.journal.replicator.{Replicator, ReplicatorConfig}
 import com.evolution.kafka.journal.util.*
+import com.evolution.scassandra4.CassandraClusterOf
 import com.evolutiongaming.catshelper.*
-import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.evolutiongaming.smetrics.CollectorRegistry
 import com.github.dockerjava.api.model.{ExposedPort, HostConfig, PortBinding, Ports}
 import com.typesafe.config.ConfigFactory

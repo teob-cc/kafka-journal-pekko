@@ -3,7 +3,7 @@ package com.evolution.kafka.journal.eventual.cassandra
 import cats.Monad
 import cats.data.NonEmptyList as Nel
 import cats.syntax.all.*
-import com.datastax.driver.core.{BatchStatement, Row}
+import com.datastax.oss.driver.api.core.cql.{BatchStatement, DefaultBatchType, Row, Statement}
 import com.evolution.kafka.journal.*
 import com.evolution.kafka.journal.cassandra.KeyExtension.*
 import com.evolution.kafka.journal.cassandra.OriginExtension.*
@@ -16,9 +16,9 @@ import com.evolution.kafka.journal.cassandra.{CassandraConsistencyConfig, Record
 import com.evolution.kafka.journal.eventual.EventualPayloadAndType
 import com.evolution.kafka.journal.eventual.cassandra.CassandraHelper.*
 import com.evolution.kafka.journal.eventual.cassandra.HeadersHelper.*
+import com.evolution.scassandra4.syntax.*
+import com.evolution.scassandra4.{DecodeByName, EncodeByName, TableName}
 import com.evolutiongaming.catshelper.ToTry
-import com.evolutiongaming.scassandra.syntax.*
-import com.evolutiongaming.scassandra.{DecodeByName, EncodeByName, TableName}
 import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
 
@@ -141,14 +141,20 @@ private[journal] object JournalStatements {
             .setConsistencyLevel(consistencyConfig.value)
         }
 
-        val statement = {
+        val statement: Statement[?] = {
           if (events.tail.isEmpty) {
             statementOf(events.head)
           } else {
-            events.foldLeft(new BatchStatement()) { (batch, record) => batch.add(statementOf(record)) }
+            events
+              .foldLeft(BatchStatement.builder(DefaultBatchType.LOGGED)) { (batch, record) =>
+                batch.addStatement(statementOf(record))
+              }
+              .build()
+              .setConsistencyLevel(consistencyConfig.value)
           }
         }
-        statement.setConsistencyLevel(consistencyConfig.value).first.void
+        // direct call: the implicit StatementOps conversion cannot re-capture a wildcard Statement[?]
+        CassandraSession[F].execute(statement).first.void
       }
     }
   }

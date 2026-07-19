@@ -2,11 +2,11 @@ package com.evolution.kafka.journal.replicator
 
 import cats.data.NonEmptyList as Nel
 import cats.syntax.all.*
-import com.datastax.driver.core.ConsistencyLevel
+import com.datastax.oss.driver.api.core.DefaultConsistencyLevel as ConsistencyLevel
 import com.evolution.kafka.journal.eventual.cassandra.EventualCassandraConfig
 import com.evolution.kafka.journal.util.PureConfigHelper.*
 import com.evolution.kafka.journal.{FromConfigReaderResult, KafkaConfig}
-import com.evolutiongaming.scassandra.{CassandraConfig, QueryConfig}
+import com.evolution.scassandra4.{CassandraConfig, QueryConfig}
 import com.typesafe.config.Config
 import pureconfig.{ConfigCursor, ConfigReader, ConfigSource}
 

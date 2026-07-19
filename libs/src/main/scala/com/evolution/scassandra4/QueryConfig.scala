@@ -1,7 +1,7 @@
 package com.evolution.scassandra4
 
-import PureconfigSyntax._
 import com.datastax.oss.driver.api.core.DefaultConsistencyLevel
+import com.evolution.scassandra4.util.PureconfigSyntax._
 import com.evolution.scassandra4.util.{ConfigReaderFromEnum, PureconfigSyntax}
 import pureconfig.ConfigReader
 

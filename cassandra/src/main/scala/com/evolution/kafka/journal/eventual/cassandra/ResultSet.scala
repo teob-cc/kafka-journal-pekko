@@ -1,27 +1,16 @@
 package com.evolution.kafka.journal.eventual.cassandra
 
+import cats.effect.Spawn
 import cats.effect.syntax.all.*
-import cats.effect.{Async, Spawn, Sync}
 import cats.syntax.all.*
-import com.datastax.driver.core.{ResultSet as ResultSetJ, Row}
-import com.evolutiongaming.scassandra.util.FromGFuture
 import com.evolutiongaming.sstream.FoldWhile.*
 import com.evolutiongaming.sstream.Stream
 
+/**
+ * Generic paging fold, kept for its spec; production paging now delegates to
+ * `StreamingCassandraSession` of scassandra4.
+ */
 object ResultSet {
-
-  def apply[F[_]: Async: FromGFuture](resultSet: ResultSetJ): Stream[F, Row] = {
-
-    val iterator = resultSet.iterator()
-
-    val fetch = FromGFuture[F].apply { resultSet.fetchMoreResults() }.void
-
-    val fetched = Sync[F].delay { resultSet.isFullyFetched }
-
-    val next = Sync[F].delay { List.fill(resultSet.getAvailableWithoutFetching)(iterator.next()) }
-
-    apply[F, Row](fetch, fetched, next)
-  }
 
   def apply[F[_]: Spawn, A](
     fetch: F[Unit],
