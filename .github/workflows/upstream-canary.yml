@@ -1,0 +1,46 @@
+# Disambiguation lane (provisioning plan §9.2): IntegrationSuite via the original
+# testcontainers path against upstream's own image pins. When clone-e2e fails and
+# this is green, the failure is a clone quirk (patch the vendored client stack);
+# when both are red, the bug is ours. Also keeps us honestly mergeable with
+# upstream kafka-journal. Weekly — the JVM Cassandra makes this the heavier lane.
+name: Upstream canary
+
+on:
+  schedule:
+    - cron: '0 3 * * 1' # Mondays 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  upstream-canary:
+    runs-on:
+      - self-hosted
+      - cit
+
+    timeout-minutes: 90
+
+    steps:
+
+      - name: Ensure sbt is available on PATH
+        run: |
+          if [ -x /usr/local/sbt/bin/sbt ]; then
+            echo "/usr/local/sbt/bin" >> "$GITHUB_PATH"
+          elif [ -x /usr/local/bin/sbt ]; then
+            echo "/usr/local/bin" >> "$GITHUB_PATH"
+          else
+            echo "sbt not found at /usr/local/sbt/bin or /usr/local/bin" >&2
+            exit 1
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Run IntegrationSuite (testcontainers, upstream images)
+        run: sbt tests/test
+        env:
+          # Upstream pins (versions match the IntegrationSuite defaults), pulled
+          # through the Harbor Docker-Hub proxy; official images need `library/`
+          KJ_KAFKA_IMAGE: harbor.cit.lh.jacum.com/dockerhub-proxy/apache/kafka-native:3.8.1
+          KJ_CASSANDRA_IMAGE: harbor.cit.lh.jacum.com/dockerhub-proxy/library/cassandra:4.1.8
+          # ephemeral DinD — pod teardown is the cleanup; skips the ryuk image pull
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+          JAVA_TOOL_OPTIONS: "-Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"

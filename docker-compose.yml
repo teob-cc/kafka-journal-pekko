@@ -10,7 +10,9 @@
 # Same images/major versions as CI, cit and prod — one platform, four tiers.
 services:
   redpanda:
-    image: redpandadata/redpanda:v25.1.1
+    # KJ_REDPANDA_IMAGE re-points at a mirror (CI: Harbor Docker-Hub proxy); the
+    # default here is THE version pin — keep .github/workflows/clone-e2e.yml in sync
+    image: ${KJ_REDPANDA_IMAGE:-redpandadata/redpanda:v25.1.1}
     container_name: kafka-journal-redpanda
     command:
       - redpanda
@@ -33,7 +35,7 @@ services:
       retries: 12
 
   scylla:
-    image: scylladb/scylla:2025.1
+    image: ${KJ_SCYLLA_IMAGE:-scylladb/scylla:2025.1}
     container_name: kafka-journal-scylla
     command: >-
       --smp 1 --memory 1G --overprovisioned 1 --developer-mode 1

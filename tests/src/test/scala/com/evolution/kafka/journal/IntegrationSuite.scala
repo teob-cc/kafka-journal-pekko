@@ -18,10 +18,20 @@ import org.testcontainers.kafka.KafkaContainer
 import org.testcontainers.utility.DockerImageName
 
 object IntegrationSuite {
+
+  // KJ_CASSANDRA_IMAGE / KJ_KAFKA_IMAGE re-point the testcontainers pulls at a mirror
+  // (CI uses the Harbor Docker-Hub proxy) without changing the pinned upstream versions
+  private def image(envVar: String, default: String, compatibleWith: String): DockerImageName = {
+    sys.env.get(envVar).filter(_.nonEmpty) match {
+      case Some(name) => DockerImageName.parse(name).asCompatibleSubstituteFor(compatibleWith)
+      case None => DockerImageName.parse(default)
+    }
+  }
+
   // Cassandra version: latest 4.x
-  private val CassandraDockerImage = DockerImageName.parse("cassandra:4.1.8")
+  private val CassandraDockerImage = image("KJ_CASSANDRA_IMAGE", "cassandra:4.1.8", "cassandra")
   // Kafka version: 4.0.0 is too new to be the main test version, 3.9.0 container doesn't start
-  private val KafkaDockerImage = DockerImageName.parse("apache/kafka-native:3.8.1")
+  private val KafkaDockerImage = image("KJ_KAFKA_IMAGE", "apache/kafka-native:3.8.1", "apache/kafka-native")
 
   // When true, do not start testcontainers: Kafka-compatible and CQL-compatible servers are
   // expected on localhost:9092/9042 already (e.g. `docker compose up -d --wait` — Redpanda + ScyllaDB).
