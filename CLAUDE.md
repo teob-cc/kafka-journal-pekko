@@ -38,11 +38,11 @@ Two plans in `~/work/teob/.claude/plans/` drive all work here:
 
 ## Near-term work queue (from the plans)
 
-1. **Push the rebase** (`--force-with-lease origin master`) once the post-rebase `IntegrationSuite` validation run is green — may already be done; check `git status` vs `origin/master`.
-2. **CI clone-e2e lane** (provisioning plan §9): per-PR job running `IntegrationSuite` with `KAFKA_JOURNAL_EXTERNAL_SERVICES=true` against the compose images; weekly upstream-canary lane keeping the testcontainers path (`cassandra:4.1.8` + `apache/kafka-native:3.8.1`). Runs on the lambda-house self-hosted DinD runners (~4–5 Gi peak, fits the 6 Gi limit).
-3. **`ResetPointersApp`** admin tool: after a Redpanda topic recreation, `pointer2`/`metajournal` in Scylla reference stale offsets; upstream documents nothing. Needed for the single-node recovery runbook.
-4. **Watch upstream #532** (Cassandra snapshot store) — when it ships, evaluate replacing pekko-persistence-cassandra for TEOB snapshots.
-5. **Rebase cadence:** track upstream master; small frequent rebases beat big ones (this last one was cheap because upstream had only moved 3 build commits past v9.1.1).
+1. **`ResetPointersApp`** admin tool: after a Redpanda topic recreation, `pointer2`/`metajournal` in Scylla reference stale offsets; upstream documents nothing. Needed for the single-node recovery runbook.
+2. **Watch upstream #532** (Cassandra snapshot store) — when it ships, evaluate replacing pekko-persistence-cassandra for TEOB snapshots.
+3. **Rebase cadence:** track upstream master; small frequent rebases beat big ones (this last one was cheap because upstream had only moved 3 build commits past v9.1.1).
+
+Done 2026-07-20: the CI lanes from provisioning plan §9 are live — `e2e.yml` (clone-e2e: PR + master push + dispatch, compose stack in external-services mode, Harbor Docker-Hub proxy images) and `upstream-canary.yml` (weekly Monday 03:00 UTC + dispatch, testcontainers path on upstream pins via `KJ_KAFKA_IMAGE`/`KJ_CASSANDRA_IMAGE`). Both validated green: 149/149, ~10–13 min per run.
 
 ## Working conventions
 

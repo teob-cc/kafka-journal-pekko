@@ -9,6 +9,20 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [ master ]
+  # this repo's normal flow is direct pushes to master (a push is a release) —
+  # without this trigger the lane would almost never run
+  push:
+    branches: [ master ]
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Version pins live in docker-compose.yml; these only re-point the pulls at the
+  # Harbor Docker-Hub proxy (public project, anonymous pull) to dodge Hub rate limits.
+  KJ_REDPANDA_IMAGE: harbor.cit.lh.jacum.com/dockerhub-proxy/redpandadata/redpanda:v25.1.1
+  KJ_SCYLLA_IMAGE: harbor.cit.lh.jacum.com/dockerhub-proxy/scylladb/scylla:2025.1
 
 jobs:
   e2e:
