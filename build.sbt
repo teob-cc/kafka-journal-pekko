@@ -128,7 +128,6 @@ lazy val libs = project
       PlayJson,
       Jsoniter,
       KafkaClients,
-      CassandraDriver,
       CassandraDriver4,
       Scodec.Bits,
       Scodec.Core,

@@ -25,7 +25,7 @@ CI publishes to Nexus **on tags only** (`.github/workflows/publish-to-nexus.yml`
 
 - `SCALA3_MIGRATION.md` — how the Scala 3 migration was done, patterns used.
 - `V9_CATCHUP.md` — the v6.2.0→v9.1.1 catch-up: what was ported, vendored-library refresh table (skafka 20.2.1 = kafka-clients 4.x).
-- `DRIVER4_PLAN.md` — plan for migrating scassandra off the EOL DataStax 3.11.5 driver to java-driver 4.x.
+- `DRIVER4_PLAN.md` / `DRIVER4_CATCHUP.md` — plan and result of the driver-4 migration (done 2026-07-19): everything now rides java-driver-core 4.19.0 via vendored `scassandra4`; the DataStax 3.11.5 driver and driver-3 scassandra are gone.
 - `Notes for Next Developer.md` — **upstream's** architecture notes (actions model, reading flow); starts with a warning that it may be outdated, but the actions/marker model description is still the best intro to how the journal actually works.
 
 ## The roadmap lives in teob

@@ -2,7 +2,6 @@ import sbt.*
 
 object Dependencies {
   val ScalaTest = "org.scalatest" %% "scalatest" % "3.2.20"
-  val CassandraDriver = "com.datastax.cassandra" % "cassandra-driver-core" % "3.11.5"
   val CassandraDriver4 = "org.apache.cassandra" % "java-driver-core" % "4.19.0"
   val KafkaClients = "org.apache.kafka" % "kafka-clients" % "4.3.1"
   val PlayJson = "org.playframework" %% "play-json" % "3.0.6"

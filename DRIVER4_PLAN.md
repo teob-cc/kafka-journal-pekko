@@ -1,6 +1,6 @@
 # Plan: Cassandra Java driver 3 → 4 migration
 
-**Date:** 2026-07-19. **Status:** planned, not started. Prerequisite: v9.1.1 catch-up merged (see `V9_CATCHUP.md`).
+**Date:** 2026-07-19. **Status:** DONE — executed same day; see `DRIVER4_CATCHUP.md` for what shipped and the deviations. Prerequisite: v9.1.1 catch-up merged (see `V9_CATCHUP.md`).
 
 ## Why
 
