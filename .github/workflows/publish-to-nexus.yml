@@ -26,8 +26,9 @@ env:
   HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
   HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
   NEXUS_REGISTRY: nexus-api.${{ inputs.environment || 'cit' }}.lh.jacum.com
-  NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
-  NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+  # Org-level secrets are per-environment suffixed (no unsuffixed repo copies here)
+  NEXUS_USERNAME: ${{ inputs.environment == 'prod' && secrets.NEXUS_USERNAME_PROD || secrets.NEXUS_USERNAME_CIT }}
+  NEXUS_PASSWORD: ${{ inputs.environment == 'prod' && secrets.NEXUS_PASSWORD_PROD || secrets.NEXUS_PASSWORD_CIT }}
 jobs:
   publish:
     runs-on:
