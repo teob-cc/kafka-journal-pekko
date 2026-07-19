@@ -2,6 +2,29 @@ import Dependencies.*
 import com.typesafe.tools.mima.core.*
 import sbt.Package.ManifestAttributes
 
+// Nexus publishing (same pattern as teob's build): target and credentials from env
+lazy val nexusRegistry = sys.env.get("NEXUS_REGISTRY")
+ThisBuild / publishMavenStyle := true
+ThisBuild / publishTo := {
+  nexusRegistry
+    .map { registry =>
+      if (isSnapshot.value) "snapshots" at s"https://$registry/repository/maven-snapshots/"
+      else "releases" at s"https://$registry/repository/maven-releases/"
+    }
+    .orElse {
+      if (isSnapshot.value) Some(Resolver.file("snapshots", file("target/repository/snapshots")))
+      else Some(Resolver.file("releases", file("target/repository/releases")))
+    }
+}
+ThisBuild / credentials ++=
+  {
+    for {
+      registry <- nexusRegistry
+      username <- sys.env.get("NEXUS_USERNAME")
+      password <- sys.env.get("NEXUS_PASSWORD")
+    } yield Credentials("Sonatype Nexus Repository Manager", registry, username, password)
+  }.toSeq
+
 lazy val commonSettings = Seq(
   organization := "cc.lambdahouse",
   organizationName := "Lambda House",
@@ -61,7 +84,11 @@ val alias: Seq[sbt.Def.Setting[?]] =
       "check",
       "all versionPolicyCheck Compile/doc scalafmtCheckAll scalafmtSbtCheck",
     ) ++
-    addCommandAlias("build", "all compile test")
+    addCommandAlias("build", "all compile test") ++
+    addCommandAlias(
+      "testUnit",
+      "all core/test journal/test snapshot/test replicator/test cassandra/test eventualCassandra/test snapshotCassandra/test circe/test persistence/test persistenceCirce/test ScalaTestIO/test",
+    )
 
 lazy val root = project
   .in(file("."))

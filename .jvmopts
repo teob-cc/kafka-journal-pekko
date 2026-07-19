@@ -1,3 +1,1 @@
--Xms16G
--Xmx16G
--Dsbt.boot.lock=false
+-Xmx6G
