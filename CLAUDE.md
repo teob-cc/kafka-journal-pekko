@@ -19,7 +19,7 @@ Key facts:
 | `origin` | lambda-house/kafka-journal-pekko | ours — push here, `--force-with-lease` after rebases |
 | `upstream` | evolution-gaming/kafka-journal | **fetch-only** — push URL set to `DISABLED` |
 
-CI publishes to Nexus **on tags only** (`.github/workflows/publish-to-nexus.yml`), so pushing `master` is safe; tagging releases.
+Versioning is **CalVer** (`build.sbt`): base `<yyyyMM>.<minor>` bumped by hand (`versionBase`), CI stamps `<base>.<run number>` releases, local builds are `<base>-SNAPSHOT`. CI publishes to Nexus **on every master push** (`.github/workflows/publish-to-nexus.yml`) — a push is a release; `workflow_dispatch` with a `version` input overrides.
 
 ## Documents in this repo
 

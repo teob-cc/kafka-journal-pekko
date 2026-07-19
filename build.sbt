@@ -2,6 +2,19 @@ import Dependencies.*
 import com.typesafe.tools.mima.core.*
 import sbt.Package.ManifestAttributes
 
+// CalVer (same pattern as teob's build): <yyyyMM>.<minor> base, bumped by hand;
+// CI stamps releases as <base>.<run number>, anything local is <base>-SNAPSHOT.
+// PACKAGE_VERSION (workflow_dispatch input) overrides everything.
+lazy val versionBase = "202607.01"
+ThisBuild / version := {
+  sys
+    .env
+    .get("PACKAGE_VERSION")
+    .filter(_.nonEmpty)
+    .orElse(sys.env.get("GITHUB_RUN_NUMBER").map { run => s"$versionBase.$run" })
+    .getOrElse(s"$versionBase-SNAPSHOT")
+}
+
 // Nexus publishing (same pattern as teob's build): target and credentials from env
 lazy val nexusRegistry = sys.env.get("NEXUS_REGISTRY")
 ThisBuild / publishMavenStyle := true

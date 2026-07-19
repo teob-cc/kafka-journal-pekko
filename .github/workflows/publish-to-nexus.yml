@@ -2,8 +2,7 @@ name: Publish to Nexus
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ master ]
   workflow_dispatch:
     inputs:
       version:
@@ -97,33 +96,20 @@ jobs:
 
       - name: Determine version
         id: version
+        # CalVer, computed in build.sbt: <base>.<run number> in CI, <base>-SNAPSHOT
+        # locally, PACKAGE_VERSION overrides — this step only mirrors that for the summary
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            # Ensure sbt is available on PATH for version determination
-            if [ -x /usr/local/sbt/bin/sbt ]; then
-              export PATH="/usr/local/sbt/bin:$PATH"
-            elif [ -x /usr/local/bin/sbt ]; then
-              export PATH="/usr/local/bin:$PATH"
-            fi
-
-            # Try to get version from sbt
             VERSION=$(sbt --no-colors --error "print version" 2>/dev/null | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' | tail -n 1 | xargs)
-            if [ -z "$VERSION" ]; then
-              VERSION="0.1.0-SNAPSHOT"
-            fi
           fi
 
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Publishing version: $VERSION"
 
       - name: Run tests and publish
-        # .jvmopts (-Xmx4G) must fit the runner pod's 6Gi cgroup limit AND stay
-        # untouched: modifying it here dirties the worktree, sbt-dynver then
-        # derives a dirty version and publish lands in maven-snapshots (400).
+        # .jvmopts (-Xmx4G) must fit the runner pod's 6Gi cgroup limit
         run: sbt "Test/compile; testUnit; publish"
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
