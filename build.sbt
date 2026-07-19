@@ -26,7 +26,10 @@ lazy val commonSettings = Seq(
   ),
   autoAPIMappings := true,
   versionScheme := Some("early-semver"),
-  versionPolicyIntention := Compatibility.BinaryCompatible,
+  // No previously published artifacts to compare against until the first
+  // lambda-house release; switch back to BinaryCompatible after it is out.
+  versionPolicyIntention := Compatibility.None,
+  versionPolicyPreviousVersions := Nil,
   packageOptions := {
     Seq(
       ManifestAttributes(
