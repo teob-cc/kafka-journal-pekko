@@ -1,7 +1,11 @@
 name: Publish to Nexus
 
 on:
-  push:
+  # Gated on the clone-e2e lane: a master push runs E2E first, and only a green
+  # run publishes. workflow_dispatch still publishes immediately (escape hatch).
+  workflow_run:
+    workflows: [ "E2E (clone platform)" ]
+    types: [ completed ]
     branches: [ master ]
   workflow_dispatch:
     inputs:
@@ -32,6 +36,13 @@ env:
   NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
 jobs:
   publish:
+    # Only a green E2E on a master *push* is a release; PR-triggered E2E runs
+    # reach this workflow too and must not publish.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+
     runs-on:
       - self-hosted
       - ${{ inputs.environment || 'cit' }}
@@ -93,6 +104,10 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          # workflow_run defaults to the default-branch HEAD, which may already have
+          # moved past the commit E2E validated — publish exactly what went green.
+          # Empty on workflow_dispatch, where checkout falls back to the default branch.
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Determine version
         id: version
@@ -121,4 +136,10 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
           echo "**Repository:** https://nexus-api.${{ inputs.environment || 'cit' }}.lh.jacum.com" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ github.event.workflow_run.id }}" ]; then
+            echo "**Gated by E2E run:** [${{ github.event.workflow_run.id }}](${{ github.event.workflow_run.html_url }})" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Gated by E2E run:** none (manual dispatch)" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY

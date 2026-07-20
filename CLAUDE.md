@@ -19,7 +19,9 @@ Key facts:
 | `origin` | lambda-house/kafka-journal-pekko | ours — push here, `--force-with-lease` after rebases |
 | `upstream` | evolution-gaming/kafka-journal | **fetch-only** — push URL set to `DISABLED` |
 
-Versioning is **CalVer** (`build.sbt`): base `<yyyyMM>.<minor>` bumped by hand (`versionBase`), CI stamps `<base>.<run number>` releases, local builds are `<base>-SNAPSHOT`. CI publishes to Nexus **on every master push** (`.github/workflows/publish-to-nexus.yml`) — a push is a release; `workflow_dispatch` with a `version` input overrides.
+Versioning is **CalVer** (`build.sbt`): base `<yyyyMM>.<minor>` bumped by hand (`versionBase`), CI stamps `<base>.<run number>` releases (run number of the *publish* workflow), local builds are `<base>-SNAPSHOT`.
+
+Release flow — **a master push is a release, but only via a green e2e**: the push runs `e2e.yml`; publishing (`publish-to-nexus.yml`) triggers on `workflow_run` of that lane and runs only when the conclusion is `success` and the triggering event was a push, checking out the exact `head_sha` e2e validated. So a release now lags a push by the e2e run (~13 min), and a red e2e means nothing is published. `workflow_dispatch` bypasses the gate entirely (escape hatch), with an optional `version` input overriding CalVer.
 
 ## Documents in this repo
 
