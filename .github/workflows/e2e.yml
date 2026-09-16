@@ -3,7 +3,7 @@ name: E2E (clone platform)
 # Clone-e2e lane (infra provisioning plan §9 / repo CLAUDE.md next-steps):
 # full IntegrationSuite in external-services mode against the same
 # Redpanda v25.1.1 + Scylla 2025.1 images as local dev, cit and prod.
-# Runs on the lambda-house self-hosted DinD runners (~4-5 Gi peak, 6 Gi limit).
+# Runs on the platform self-hosted DinD runners (~4-5 Gi peak; 16 Gi limit).
 
 on:
   workflow_dispatch:
@@ -21,14 +21,14 @@ concurrency:
 env:
   # Version pins live in docker-compose.yml; these only re-point the pulls at the
   # Harbor Docker-Hub proxy (public project, anonymous pull) to dodge Hub rate limits.
-  KJ_REDPANDA_IMAGE: harbor.cit.lh.jacum.com/dockerhub-proxy/redpandadata/redpanda:v25.1.1
-  KJ_SCYLLA_IMAGE: harbor.cit.lh.jacum.com/dockerhub-proxy/scylladb/scylla:2025.1
+  KJ_REDPANDA_IMAGE: harbor.test.teob.cc/dockerhub-proxy/redpandadata/redpanda:v25.1.1
+  KJ_SCYLLA_IMAGE: harbor.test.teob.cc/dockerhub-proxy/scylladb/scylla:2025.1
 
 jobs:
   e2e:
     runs-on:
       - self-hosted
-      - cit
+      - test
 
     timeout-minutes: 90
 

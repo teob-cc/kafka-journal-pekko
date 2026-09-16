@@ -14,7 +14,7 @@ jobs:
   upstream-canary:
     runs-on:
       - self-hosted
-      - cit
+      - test
 
     timeout-minutes: 90
 
@@ -39,8 +39,8 @@ jobs:
         env:
           # Upstream pins (versions match the IntegrationSuite defaults), pulled
           # through the Harbor Docker-Hub proxy; official images need `library/`
-          KJ_KAFKA_IMAGE: harbor.cit.lh.jacum.com/dockerhub-proxy/apache/kafka-native:3.8.1
-          KJ_CASSANDRA_IMAGE: harbor.cit.lh.jacum.com/dockerhub-proxy/library/cassandra:4.1.8
+          KJ_KAFKA_IMAGE: harbor.test.teob.cc/dockerhub-proxy/apache/kafka-native:3.8.1
+          KJ_CASSANDRA_IMAGE: harbor.test.teob.cc/dockerhub-proxy/library/cassandra:4.1.8
           # ephemeral DinD — pod teardown is the cleanup; skips the ryuk image pull
           TESTCONTAINERS_RYUK_DISABLED: "true"
           JAVA_TOOL_OPTIONS: "-Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"

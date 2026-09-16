@@ -1,10 +1,10 @@
 # Kafka Journal
 
-> Lambda House fork of [evolution-gaming/kafka-journal](https://github.com/evolution-gaming/kafka-journal),
+> teob-cc fork of [evolution-gaming/kafka-journal](https://github.com/evolution-gaming/kafka-journal),
 > maintained independently: Pekko-only, Scala 3.8.x, all Evolution library
 > dependencies insourced as source into `libs/` (see [NOTICE.md](NOTICE.md)).
 > Upstream parity point: v9.1.1 ([V9_CATCHUP.md](docs/V9_CATCHUP.md)). MIT licensed.
-> Artifacts are published to the Lambda House Nexus under `cc.lambdahouse`.
+> Artifacts are published to the teob-cc platform Nexus under `cc.teob`.
 
 > Stream data from two sources where one is eventually consistent and the other one loses its tail
 

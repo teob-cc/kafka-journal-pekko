@@ -1,7 +1,7 @@
 # Notices and attributions
 
 This repository is a fork of [evolution-gaming/kafka-journal](https://github.com/evolution-gaming/kafka-journal),
-maintained independently by Lambda House. The original project is
+maintained independently by teob-cc. The original project is
 Copyright (c) 2018 Evolution Gaming and licensed under the MIT license (see [LICENSE](LICENSE)).
 
 Functional parity point with upstream: **v9.1.1** (see `docs/V9_CATCHUP.md`).

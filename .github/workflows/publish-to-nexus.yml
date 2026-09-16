@@ -14,9 +14,14 @@ on:
         required: false
         type: string
       environment:
-        description: 'Target environment (dev/cit/prod)'
+        description: 'Target environment (also the runner label)'
         required: true
-        default: cit
+        default: test
+        type: string
+      base_domain:
+        description: 'Base domain of the environment (nexus-api.<base_domain>, harbor.<base_domain>)'
+        required: true
+        default: test.teob.cc
         type: string
       build_image_tag:
         description: 'Build image tag'
@@ -25,13 +30,13 @@ on:
         default: 'latest'
 
 env:
-  HARBOR_REGISTRY: harbor.${{ inputs.environment || 'cit' }}.lh.jacum.com
+  HARBOR_REGISTRY: harbor.${{ inputs.base_domain || 'test.teob.cc' }}
   HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
   HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-  NEXUS_REGISTRY: nexus-api.${{ inputs.environment || 'cit' }}.lh.jacum.com
-  # Repo secrets hold the Nexus 'deployment' user (source of truth:
-  # k8s secret nexus/nexus-deployment-credentials in the cit cluster).
-  # The org-level NEXUS_*_CIT secrets were verified stale on 2026-07-19.
+  NEXUS_REGISTRY: nexus-api.${{ inputs.base_domain || 'test.teob.cc' }}
+  # Environment secrets hold the Nexus 'deployment' user, pushed by
+  # infra-skills tools/k3s/registry-credentials.sh <env> kafka-journal-pekko
+  # (source of truth: k8s secret nexus/nexus-deployment-credentials).
   NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
   NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
 jobs:
@@ -45,10 +50,10 @@ jobs:
 
     runs-on:
       - self-hosted
-      - ${{ inputs.environment || 'cit' }}
+      - ${{ inputs.environment || 'test' }}
 
     environment:
-      name: ${{ inputs.environment || 'cit' }}
+      name: ${{ inputs.environment || 'test' }}
 
     permissions:
       contents: read
@@ -124,7 +129,7 @@ jobs:
           echo "Publishing version: $VERSION"
 
       - name: Run tests and publish
-        # .jvmopts (-Xmx4G) must fit the runner pod's 6Gi cgroup limit
+        # .jvmopts (-Xmx4G) fits the runner pod's memory limit (16Gi on the platform)
         run: sbt "Test/compile; testUnit; publish"
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
@@ -135,7 +140,7 @@ jobs:
           echo "### Published to Nexus 🚀" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Repository:** https://nexus-api.${{ inputs.environment || 'cit' }}.lh.jacum.com" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** https://${{ env.NEXUS_REGISTRY }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
           if [ -n "${{ github.event.workflow_run.id }}" ]; then
             echo "**Gated by E2E run:** [${{ github.event.workflow_run.id }}](${{ github.event.workflow_run.html_url }})" >> $GITHUB_STEP_SUMMARY

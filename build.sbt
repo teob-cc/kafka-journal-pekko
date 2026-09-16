@@ -39,10 +39,10 @@ ThisBuild / credentials ++=
   }.toSeq
 
 lazy val commonSettings = Seq(
-  organization := "cc.lambdahouse",
-  organizationName := "Lambda House",
-  organizationHomepage := Some(url("https://github.com/lambda-house")),
-  homepage := Some(url("https://github.com/lambda-house/kafka-journal-pekko")),
+  organization := "cc.teob",
+  organizationName := "teob-cc",
+  organizationHomepage := Some(url("https://github.com/teob-cc")),
+  homepage := Some(url("https://github.com/teob-cc/kafka-journal-pekko")),
   startYear := Some(2018),
   crossScalaVersions := Seq("3.8.4"),
   scalaVersion := crossScalaVersions.value.head,
@@ -65,7 +65,7 @@ lazy val commonSettings = Seq(
   autoAPIMappings := true,
   versionScheme := Some("early-semver"),
   // No previously published artifacts to compare against until the first
-  // lambda-house release; switch back to BinaryCompatible after it is out.
+  // first teob-cc release; switch back to BinaryCompatible after it is out.
   versionPolicyIntention := Compatibility.None,
   versionPolicyPreviousVersions := Nil,
   packageOptions := {
