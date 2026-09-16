@@ -2,7 +2,7 @@ name: E2E (clone platform)
 
 # Clone-e2e lane (infra provisioning plan §9 / repo CLAUDE.md next-steps):
 # full IntegrationSuite in external-services mode against the same
-# Redpanda v25.1.1 + Scylla 2025.1 images as local dev, cit and prod.
+# Redpanda v25.1.1 + Scylla 2025.1 images as local dev and the platform environments.
 # Runs on the platform self-hosted DinD runners (~4-5 Gi peak; 16 Gi limit).
 
 on:

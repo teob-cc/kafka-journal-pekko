@@ -4,7 +4,7 @@ Agent takeover context for this repository. Read this first; it links everything
 
 ## What this repository is
 
-The **lambda-house fork of [evolution-gaming/kafka-journal](https://github.com/evolution-gaming/kafka-journal)** — a Kafka-first event journal with Cassandra as the eventual long-term store, exposing an Apache Pekko persistence plugin. We insourced it, migrated it to **Scala 3**, and publish it under **`cc.lambdahouse`** coordinates to our Nexus. It is the intended scalable journal backend for the TEOB event-sourcing framework (`~/work/teob`).
+The **teob-cc fork of [evolution-gaming/kafka-journal](https://github.com/evolution-gaming/kafka-journal)** — a Kafka-first event journal with Cassandra as the eventual long-term store, exposing an Apache Pekko persistence plugin. We insourced it, migrated it to **Scala 3**, and publish it under **`cc.teob`** coordinates to the platform Nexus (`nexus-api.<base_domain>`). It is the intended scalable journal backend for the TEOB event-sourcing framework (`~/work/teob`).
 
 Key facts:
 
@@ -16,7 +16,7 @@ Key facts:
 
 | remote | URL | role |
 |---|---|---|
-| `origin` | lambda-house/kafka-journal-pekko | ours — push here, `--force-with-lease` after rebases |
+| `origin` | teob-cc/kafka-journal-pekko | ours — push here, `--force-with-lease` after rebases |
 | `upstream` | evolution-gaming/kafka-journal | **fetch-only** — push URL set to `DISABLED` |
 
 Versioning is **CalVer** (`build.sbt`): base `<yyyyMM>.<minor>` bumped by hand (`versionBase`), CI stamps `<base>.<run number>` releases (run number of the *publish* workflow), local builds are `<base>-SNAPSHOT`.
