@@ -149,6 +149,8 @@ jobs:
           (umask 077; printf '%s\n' "$KEY" > "$d/key")
           # github.com's published ed25519 host key (api.github.com/meta)
           echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$d/known_hosts"
+          # the runner image has no ssh client; deploy keys only work over ssh
+          command -v ssh >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq openssh-client >/dev/null; }
           export GIT_SSH_COMMAND="ssh -i $d/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$d/known_hosts"
           git push --force git@github.com:lambda-house/kafka-journal-pekko.git HEAD:refs/heads/master "HEAD:refs/tags/v${VERSION}"
 
