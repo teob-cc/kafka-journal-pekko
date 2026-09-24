@@ -135,6 +135,23 @@ jobs:
           PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
           JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=85.0 -Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"
 
+      # teob-cc/kafka-journal-pekko is the source of truth; lambda-house/kafka-journal-pekko is a read-only copy that
+      # publishes each release to the lambda-house Nexus under the same version (its `mirror` branch does that).
+      # Hand it the commit just published, tagged v<version>. LAMBDA_HOUSE_MIRROR_KEY is a write deploy key on the
+      # lambda-house repository (this organisation disables deploy keys, so the push goes from here).
+      - name: Mirror the release to lambda-house
+        env:
+          KEY: ${{ secrets.LAMBDA_HOUSE_MIRROR_KEY }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/mirror"; mkdir -p "$d"; trap 'rm -rf "$d"' EXIT
+          (umask 077; printf '%s\n' "$KEY" > "$d/key")
+          # github.com's published ed25519 host key (api.github.com/meta)
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$d/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $d/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$d/known_hosts"
+          git push --force git@github.com:lambda-house/kafka-journal-pekko.git HEAD:refs/heads/master "HEAD:refs/tags/v${VERSION}"
+
       - name: Summary
         run: |
           echo "### Published to Nexus 🚀" >> $GITHUB_STEP_SUMMARY
