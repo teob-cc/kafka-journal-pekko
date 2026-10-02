@@ -1,0 +1,70 @@
+name: Snapshot
+
+# Every master push that passes the clone-e2e lane publishes <base>-SNAPSHOT (build.sbt) to the Maven Central snapshots
+# repository, from exactly the commit E2E validated. Snapshots are for trying a change out; releases are deliberate
+# (release.yml), and teob and every other service depend on releases only.
+#
+# Runs on GitHub-hosted runners: the repository is public, and the teob-cc self-hosted runners are not offered to
+# public repositories.
+#
+# Secrets: SONATYPE_USER, SONATYPE_PASSWORD (organisation-wide, shared with the cats-effect and blaze forks).
+on:
+  workflow_run:
+    workflows: [ "E2E (clone platform)" ]
+    types: [ completed ]
+    branches: [ master ]
+  workflow_dispatch:
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: true
+
+env:
+  JAVA_TOOL_OPTIONS: "-Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"
+
+jobs:
+  snapshot:
+    # Only a green E2E on a master *push*; PR-triggered E2E runs reach this workflow too and must not publish.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          # publish exactly what went green; empty on workflow_dispatch (default branch)
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: sbt
+
+      - name: Setup sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Publish the snapshot to Maven Central
+        run: sbt "show ThisBuild / version" publish
+        env:
+          PUBLISH_TARGET: central
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USER }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+
+      - name: Summary
+        run: |
+          VERSION=$(sbt --no-colors --error "print ThisBuild / version" 2>/dev/null | tail -n 1 | xargs)
+          echo "### Snapshot published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** https://central.sonatype.com/repository/maven-snapshots/" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_STEP_SUMMARY

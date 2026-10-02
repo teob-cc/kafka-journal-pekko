@@ -1,11 +1,11 @@
-name: Publish
+name: Release
 
-# Publishes cc.teob kafka-journal to Maven Central and to the platform Nexus, then hands the release to the
-# lambda-house mirror.
+# A deliberate release of cc.teob kafka-journal: Maven Central, then the platform Nexus, then the lambda-house mirror,
+# then the tag v<version> here. A master push only publishes a snapshot (snapshot.yml); teob and the other services
+# depend on releases only, so a release is the one way a change reaches them.
 #
-# Gated on the clone-e2e lane: a master push runs E2E first, and only a green run publishes, from exactly the commit
-# E2E validated. workflow_dispatch still publishes immediately (escape hatch); with dry_run it only builds, signs and
-# stages, and lists what would be published.
+# Refuses to release a commit whose E2E (clone platform) run did not pass, and a version that was already released.
+# With dry_run it builds, signs and stages, and lists what would be published.
 #
 # Runs on GitHub-hosted runners: the repository is public, and the teob-cc self-hosted runners are not offered to
 # public repositories.
@@ -14,18 +14,14 @@ name: Publish
 # blaze forks); NEXUS_USERNAME, NEXUS_PASSWORD in the `test` environment; LAMBDA_HOUSE_MIRROR_APP_KEY and the
 # variable LAMBDA_HOUSE_MIRROR_APP_ID for the mirror.
 on:
-  workflow_run:
-    workflows: [ "E2E (clone platform)" ]
-    types: [ completed ]
-    branches: [ master ]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (leave empty for auto-generated)'
-        required: false
+        description: 'Version to release: <yyyyMM>.<minor>.<n>, e.g. 202610.01.6'
+        required: true
         type: string
       dry_run:
-        description: 'Build, sign and stage only: no Central, no Nexus, no mirror'
+        description: 'Build, sign and stage only: no Central, no Nexus, no mirror, no tag'
         required: false
         default: false
         type: boolean
@@ -36,22 +32,16 @@ on:
         type: string
 
 concurrency:
-  group: publish
+  group: release
   cancel-in-progress: false
 
 env:
-  NEXUS_REGISTRY: nexus-api.${{ inputs.base_domain || 'test.teob.cc' }}
+  VERSION: ${{ inputs.version }}
+  NEXUS_REGISTRY: nexus-api.${{ inputs.base_domain }}
   JAVA_TOOL_OPTIONS: "-Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"
 
 jobs:
-  publish:
-    # Only a green E2E on a master *push* is a release; PR-triggered E2E runs
-    # reach this workflow too and must not publish.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push')
-
+  release:
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -59,17 +49,33 @@ jobs:
       name: test
 
     permissions:
-      contents: read
+      contents: write # pushes the release tag
+      actions: read   # looks up the commit's E2E run
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          # workflow_run defaults to the default-branch HEAD, which may already have
-          # moved past the commit E2E validated — publish exactly what went green.
-          # Empty on workflow_dispatch, where checkout falls back to the default branch.
-          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Check the version
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]{6}\.[0-9]{2}\.[0-9]+$ ]]; then
+            echo "a release version is <yyyyMM>.<minor>.<n>, got '$VERSION'" >&2; exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION is already released" >&2; exit 1
+          fi
+
+      - name: Check that E2E passed on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUNS=$(gh api "repos/${{ github.repository }}/actions/workflows/e2e.yml/runs?head_sha=${{ github.sha }}&status=success" --jq '.total_count')
+          if [ "$RUNS" = "0" ]; then
+            echo "E2E (clone platform) has not passed on ${{ github.sha }}; push it to master (or dispatch e2e.yml) and wait for green" >&2
+            exit 1
+          fi
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -80,22 +86,6 @@ jobs:
 
       - name: Setup sbt
         uses: sbt/setup-sbt@v1
-
-      - name: Determine version
-        id: version
-        # CalVer, computed in build.sbt: <base>.<run number> in CI, <base>-SNAPSHOT
-        # locally, PACKAGE_VERSION overrides — this step only pins it for every later step
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION=$(sbt --no-colors --error "print version" 2>/dev/null | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' | tail -n 1 | xargs)
-          fi
-          case "$VERSION" in
-            ""|*SNAPSHOT*) echo "a release needs a non-snapshot version, got '$VERSION'" >&2; exit 1 ;;
-          esac
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "Publishing version: $VERSION"
 
       - name: Import the signing key
         env:
@@ -113,13 +103,13 @@ jobs:
       - name: Unit tests
         run: sbt "Test/compile; testUnit"
         env:
-          PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
+          PACKAGE_VERSION: ${{ inputs.version }}
 
       - name: Sign and stage for Maven Central
         run: sbt publishSigned
         env:
           PUBLISH_TARGET: central
-          PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
+          PACKAGE_VERSION: ${{ inputs.version }}
 
       - name: List staged artifacts
         run: find target/sona-staging -name '*.pom' | sed 's|.*/||' | sort
@@ -129,7 +119,7 @@ jobs:
         run: sbt sonaRelease
         env:
           PUBLISH_TARGET: central
-          PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
+          PACKAGE_VERSION: ${{ inputs.version }}
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USER }}
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
 
@@ -137,13 +127,13 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: sbt publish
         env:
-          PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
+          PACKAGE_VERSION: ${{ inputs.version }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
 
       # teob-cc/kafka-journal-pekko is the source of truth; lambda-house/kafka-journal-pekko is a read-only copy that
       # publishes each release to the lambda-house Nexus under the same version (its `mirror` branch does that).
-      # Hand it the commit just published, tagged v<version>, with a token of the lambda-house GitHub App
+      # Hand it the commit just released, tagged v<version>, with a token of the lambda-house GitHub App
       # teob-cc-mirror (Contents + Workflows write on that repository only; a deploy key cannot push workflow changes).
       - name: Token for lambda-house/kafka-journal-pekko
         if: ${{ !inputs.dry_run }}
@@ -159,13 +149,18 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           TOKEN: ${{ steps.mirror-app.outputs.token }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           set -euo pipefail
           # checkout stored this repository's token as a github.com header; it must not ride along to lambda-house
-          git config --local --unset-all http.https://github.com/.extraheader || true
-          git push --force "https://x-access-token:${TOKEN}@github.com/lambda-house/kafka-journal-pekko.git" \
+          git -c http.https://github.com/.extraheader= push --force \
+            "https://x-access-token:${TOKEN}@github.com/lambda-house/kafka-journal-pekko.git" \
             HEAD:refs/heads/master "HEAD:refs/tags/v${VERSION}"
+
+      - name: Tag the release
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
 
       - name: Remove the signing key
         if: always()
@@ -173,13 +168,8 @@ jobs:
 
       - name: Summary
         run: |
-          echo "### ${{ inputs.dry_run && 'Staged (dry run)' || 'Published to Maven Central and Nexus' }}" >> $GITHUB_STEP_SUMMARY
+          echo "### ${{ inputs.dry_run && 'Staged (dry run)' || 'Released to Maven Central and Nexus' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Central:** https://central.sonatype.com/namespace/cc.teob" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ github.event.workflow_run.id }}" ]; then
-            echo "**Gated by E2E run:** [${{ github.event.workflow_run.id }}](${{ github.event.workflow_run.html_url }})" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "**Gated by E2E run:** none (manual dispatch)" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Central:** https://central.sonatype.com/artifact/cc.teob/kafka-journal-persistence_3/$VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

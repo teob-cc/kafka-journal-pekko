@@ -2,16 +2,15 @@ import Dependencies.*
 import com.typesafe.tools.mima.core.*
 import sbt.Package.ManifestAttributes
 
-// CalVer (same pattern as teob's build): <yyyyMM>.<minor> base, bumped by hand;
-// CI stamps releases as <base>.<run number>, anything local is <base>-SNAPSHOT.
-// PACKAGE_VERSION (workflow_dispatch input) overrides everything.
+// CalVer: <yyyyMM>.<minor> base, bumped by hand. Every build is <base>-SNAPSHOT, which is what a
+// master push publishes (to the Central snapshots repository); a release is deliberate and names its
+// version, e.g. 202610.01.6, through PACKAGE_VERSION (the release workflow's input).
 lazy val versionBase = "202610.01"
 ThisBuild / version := {
   sys
     .env
     .get("PACKAGE_VERSION")
     .filter(_.nonEmpty)
-    .orElse(sys.env.get("GITHUB_RUN_NUMBER").map { run => s"$versionBase.$run" })
     .getOrElse(s"$versionBase-SNAPSHOT")
 }
 

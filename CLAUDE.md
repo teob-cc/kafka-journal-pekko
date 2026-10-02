@@ -19,9 +19,13 @@ Key facts:
 | `origin` | teob-cc/kafka-journal-pekko | ours — push here, `--force-with-lease` after rebases |
 | `upstream` | evolution-gaming/kafka-journal | **fetch-only** — push URL set to `DISABLED` |
 
-Versioning is **CalVer** (`build.sbt`): base `<yyyyMM>.<minor>` bumped by hand (`versionBase`), CI stamps `<base>.<run number>` releases (run number of the *publish* workflow), local builds are `<base>-SNAPSHOT`.
+Versioning is **CalVer** (`build.sbt`): base `<yyyyMM>.<minor>` bumped by hand (`versionBase`). Every build is `<base>-SNAPSHOT`; a release names its version (`<base>.<n>`, e.g. `202610.01.6`) through `PACKAGE_VERSION`.
 
-Release flow — **a master push is a release, but only via a green e2e**: the push runs `e2e.yml`; publishing (`publish-to-nexus.yml`: Maven Central, then the platform Nexus, then the lambda-house mirror) triggers on `workflow_run` of that lane and runs only when the conclusion is `success` and the triggering event was a push, checking out the exact `head_sha` e2e validated. So a release now lags a push by the e2e run (~13 min), and a red e2e means nothing is published. `workflow_dispatch` bypasses the gate entirely (escape hatch), with an optional `version` input overriding CalVer, and `dry_run` to build, sign and stage without publishing anywhere. The repository is public, so every workflow runs on GitHub-hosted runners; the teob-cc self-hosted runners are not offered to public repositories.
+Publishing — **snapshots on every green push, releases only on purpose**:
+- A master push runs `e2e.yml` (the full IntegrationSuite against Redpanda + Scylla). When it is green, `snapshot.yml` publishes `<base>-SNAPSHOT` from exactly that commit to the Maven Central snapshots repository. Nothing else is published.
+- `release.yml` is dispatched by hand with a `version`. It refuses a commit whose e2e did not pass and a version already tagged, then releases to Maven Central, publishes to the platform Nexus, hands the commit to the lambda-house mirror and tags `v<version>`. `dry_run` builds, signs and stages only.
+- teob and every other service depend on releases only, never on snapshots.
+- The repository is public, so every workflow runs on GitHub-hosted runners; the teob-cc self-hosted runners are not offered to public repositories.
 
 ## Documents in this repo
 

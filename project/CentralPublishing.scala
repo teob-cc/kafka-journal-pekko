@@ -8,7 +8,7 @@ import sbt.Keys._
   * (credentials from `SONATYPE_USERNAME` / `SONATYPE_PASSWORD`, a Central Portal user token), snapshots go to the
   * Central snapshots repository, and every module carries what Central validates: a javadoc jar, a POM free of private
   * repositories, and (via sbt-pgp's `publishSigned`) signatures. Copied from teob's build; see
-  * `.github/workflows/publish-to-nexus.yml`, which publishes to both.
+  * `.github/workflows/snapshot.yml` and `.github/workflows/release.yml`.
   */
 object CentralPublishing extends AutoPlugin {
   override def trigger  = allRequirements
