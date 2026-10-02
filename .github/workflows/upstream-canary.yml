@@ -12,35 +12,29 @@ on:
 
 jobs:
   upstream-canary:
-    runs-on:
-      - self-hosted
-      - test
+    runs-on: ubuntu-latest
 
     timeout-minutes: 90
 
     steps:
 
-      - name: Ensure sbt is available on PATH
-        run: |
-          if [ -x /usr/local/sbt/bin/sbt ]; then
-            echo "/usr/local/sbt/bin" >> "$GITHUB_PATH"
-          elif [ -x /usr/local/bin/sbt ]; then
-            echo "/usr/local/bin" >> "$GITHUB_PATH"
-          else
-            echo "sbt not found at /usr/local/sbt/bin or /usr/local/bin" >&2
-            exit 1
-          fi
-
       - name: Checkout code
         uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: sbt
+
+      - name: Setup sbt
+        uses: sbt/setup-sbt@v1
 
       - name: Run IntegrationSuite (testcontainers, upstream images)
         run: sbt tests/test
         env:
-          # Upstream pins (versions match the IntegrationSuite defaults), pulled
-          # through the Harbor Docker-Hub proxy; official images need `library/`
-          KJ_KAFKA_IMAGE: harbor.test.teob.cc/dockerhub-proxy/apache/kafka-native:3.8.1
-          KJ_CASSANDRA_IMAGE: harbor.test.teob.cc/dockerhub-proxy/library/cassandra:4.1.8
-          # ephemeral DinD — pod teardown is the cleanup; skips the ryuk image pull
-          TESTCONTAINERS_RYUK_DISABLED: "true"
+          # Upstream pins (the IntegrationSuite defaults), pulled from Docker Hub
+          KJ_KAFKA_IMAGE: apache/kafka-native:3.8.1
+          KJ_CASSANDRA_IMAGE: cassandra:4.1.8
           JAVA_TOOL_OPTIONS: "-Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"

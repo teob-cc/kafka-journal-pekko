@@ -3,7 +3,8 @@ name: E2E (clone platform)
 # Clone-e2e lane (infra provisioning plan §9 / repo CLAUDE.md next-steps):
 # full IntegrationSuite in external-services mode against the same
 # Redpanda v25.1.1 + Scylla 2025.1 images as local dev and the platform environments.
-# Runs on the platform self-hosted DinD runners (~4-5 Gi peak; 16 Gi limit).
+# Runs on GitHub-hosted runners: the repository is public, and the teob-cc self-hosted
+# runners are not offered to public repositories (an outside pull request must never run there).
 
 on:
   workflow_dispatch:
@@ -18,53 +19,33 @@ concurrency:
   group: e2e-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Version pins live in docker-compose.yml; these only re-point the pulls at the
-  # Harbor Docker-Hub proxy (public project, anonymous pull) to dodge Hub rate limits.
-  KJ_REDPANDA_IMAGE: harbor.test.teob.cc/dockerhub-proxy/redpandadata/redpanda:v25.1.1
-  KJ_SCYLLA_IMAGE: harbor.test.teob.cc/dockerhub-proxy/scylladb/scylla:2025.1
+# Version pins live in docker-compose.yml; images come straight from Docker Hub.
 
 jobs:
   e2e:
-    runs-on:
-      - self-hosted
-      - test
+    runs-on: ubuntu-latest
 
     timeout-minutes: 90
 
     steps:
-      - name: Ensure sbt is available on PATH
-        run: |
-          if [ -x /usr/local/sbt/bin/sbt ]; then
-            echo "/usr/local/sbt/bin" >> "$GITHUB_PATH"
-          elif [ -x /usr/local/bin/sbt ]; then
-            echo "/usr/local/bin" >> "$GITHUB_PATH"
-          else
-            echo "sbt not found" >&2
-            exit 1
-          fi
-
-      - name: Ensure docker compose is available
-        run: |
-          if docker compose version >/dev/null 2>&1; then
-            docker compose version
-          else
-            echo "docker compose plugin missing - installing to ~/.docker/cli-plugins"
-            mkdir -p ~/.docker/cli-plugins
-            curl -fsSL -o ~/.docker/cli-plugins/docker-compose \
-              "https://github.com/docker/compose/releases/download/v2.39.2/docker-compose-linux-x86_64"
-            chmod +x ~/.docker/cli-plugins/docker-compose
-            docker compose version
-          fi
-
       - name: Checkout code
         uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: sbt
+
+      - name: Setup sbt
+        uses: sbt/setup-sbt@v1
 
       - name: Start Redpanda + Scylla (fresh volumes)
         # --wait blocks on the compose healthchecks (rpk cluster health / cqlsh).
         # down -v first is belt-and-braces: the TCK needs a virgin journal and
-        # ephemeral runners should never carry volumes, but a rerun on a warm
-        # pod must not see stale data (see CLAUDE.md on JSON-decode fallback
+        # ephemeral runners never carry volumes, but a local rerun must not
+        # see stale data (see CLAUDE.md on JSON-decode fallback
         # failures from dirty state).
         run: |
           docker compose down -v --remove-orphans || true
@@ -75,7 +56,7 @@ jobs:
         run: sbt tests/test
         env:
           KAFKA_JOURNAL_EXTERNAL_SERVICES: "true"
-          # .jvmopts (-Xmx4G) must fit the runner pod's 6Gi cgroup limit
+          # .jvmopts (-Xmx4G) fits the hosted runner's 16 GB next to Redpanda and Scylla
           JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=85.0 -Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"
 
       - name: Service logs on failure

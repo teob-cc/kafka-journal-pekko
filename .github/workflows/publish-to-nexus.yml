@@ -1,8 +1,19 @@
-name: Publish to Nexus
+name: Publish
 
+# Publishes cc.teob kafka-journal to Maven Central and to the platform Nexus, then hands the release to the
+# lambda-house mirror.
+#
+# Gated on the clone-e2e lane: a master push runs E2E first, and only a green run publishes, from exactly the commit
+# E2E validated. workflow_dispatch still publishes immediately (escape hatch); with dry_run it only builds, signs and
+# stages, and lists what would be published.
+#
+# Runs on GitHub-hosted runners: the repository is public, and the teob-cc self-hosted runners are not offered to
+# public repositories.
+#
+# Secrets: SONATYPE_USER, SONATYPE_PASSWORD, GPG_SECRET, GPG_PASS (organisation-wide, shared with the cats-effect and
+# blaze forks); NEXUS_USERNAME, NEXUS_PASSWORD in the `test` environment; LAMBDA_HOUSE_MIRROR_APP_KEY and the
+# variable LAMBDA_HOUSE_MIRROR_APP_ID for the mirror.
 on:
-  # Gated on the clone-e2e lane: a master push runs E2E first, and only a green
-  # run publishes. workflow_dispatch still publishes immediately (escape hatch).
   workflow_run:
     workflows: [ "E2E (clone platform)" ]
     types: [ completed ]
@@ -13,32 +24,25 @@ on:
         description: 'Version to publish (leave empty for auto-generated)'
         required: false
         type: string
-      environment:
-        description: 'Target environment (also the runner label)'
-        required: true
-        default: test
-        type: string
+      dry_run:
+        description: 'Build, sign and stage only: no Central, no Nexus, no mirror'
+        required: false
+        default: false
+        type: boolean
       base_domain:
-        description: 'Base domain of the environment (nexus-api.<base_domain>, harbor.<base_domain>)'
+        description: 'Base domain of the Nexus environment (nexus-api.<base_domain>)'
         required: true
         default: test.teob.cc
         type: string
-      build_image_tag:
-        description: 'Build image tag'
-        required: false
-        type: string
-        default: 'latest'
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 env:
-  HARBOR_REGISTRY: harbor.${{ inputs.base_domain || 'test.teob.cc' }}
-  HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
-  HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
   NEXUS_REGISTRY: nexus-api.${{ inputs.base_domain || 'test.teob.cc' }}
-  # Environment secrets hold the Nexus 'deployment' user, pushed by
-  # infra-skills tools/k3s/registry-credentials.sh <env> kafka-journal-pekko
-  # (source of truth: k8s secret nexus/nexus-deployment-credentials).
-  NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
-  NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+  JAVA_TOOL_OPTIONS: "-Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"
+
 jobs:
   publish:
     # Only a green E2E on a master *push* is a release; PR-triggered E2E runs
@@ -48,63 +52,16 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push')
 
-    runs-on:
-      - self-hosted
-      - ${{ inputs.environment || 'test' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
 
     environment:
-      name: ${{ inputs.environment || 'test' }}
+      name: test
 
     permissions:
       contents: read
-      packages: write
-      id-token: write
 
     steps:
-
-      - name: Ensure sbt is available on PATH
-        run: |
-          echo "Checking sbt installation locations..."
-          if [ -x /usr/local/sbt/bin/sbt ]; then
-            echo "/usr/local/sbt/bin" >> "$GITHUB_PATH"
-            echo "Added /usr/local/sbt/bin to PATH"
-          elif [ -x /usr/local/bin/sbt ]; then
-            echo "/usr/local/bin" >> "$GITHUB_PATH"
-            echo "Added /usr/local/bin to PATH"
-          else
-            echo "sbt not found at /usr/local/sbt/bin or /usr/local/bin" >&2
-            echo "Diagnostics:"
-            ls -la /usr/local/sbt/bin 2>&1 || echo "/usr/local/sbt/bin not found"
-            ls -la /usr/local/bin 2>&1 || echo "/usr/local/bin not found"
-            exit 1
-          fi
-
-      - name: Diagnostic - Runner Environment
-        run: |
-          echo "=== Runner Environment ==="
-          echo "User: $(whoami)"
-          echo "Home: $HOME"
-          echo "PWD: $PWD"
-          echo "PATH: $PATH"
-          echo ""
-          echo "=== Available Tools ==="
-          which java || echo "java not found"
-          which scala || echo "scala not found"
-          which sbt || echo "sbt not found"
-          which docker || echo "docker not found"
-          echo ""
-          echo "=== Versions ==="
-          java -version 2>&1 || true
-          sbt --version 2>&1 || true
-          echo ""
-          echo "=== SBT Location Check ==="
-          ls -la /usr/local/sbt/bin/ 2>&1 || echo "/usr/local/sbt/bin not found"
-          ls -la /usr/local/bin/sbt 2>&1 || echo "/usr/local/bin/sbt not found"
-          find /usr/local -name sbt -type f 2>/dev/null || echo "sbt not found in /usr/local"
-          echo ""
-          echo "=== Runner Image ==="
-          cat /etc/os-release || true
-
       - name: Checkout code
         uses: actions/checkout@v5
         with:
@@ -114,32 +71,82 @@ jobs:
           # Empty on workflow_dispatch, where checkout falls back to the default branch.
           ref: ${{ github.event.workflow_run.head_sha }}
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: sbt
+
+      - name: Setup sbt
+        uses: sbt/setup-sbt@v1
+
       - name: Determine version
         id: version
         # CalVer, computed in build.sbt: <base>.<run number> in CI, <base>-SNAPSHOT
-        # locally, PACKAGE_VERSION overrides — this step only mirrors that for the summary
+        # locally, PACKAGE_VERSION overrides — this step only pins it for every later step
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
             VERSION=$(sbt --no-colors --error "print version" 2>/dev/null | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' | tail -n 1 | xargs)
           fi
-
+          case "$VERSION" in
+            ""|*SNAPSHOT*) echo "a release needs a non-snapshot version, got '$VERSION'" >&2; exit 1 ;;
+          esac
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Publishing version: $VERSION"
 
-      - name: Run tests and publish
-        # .jvmopts (-Xmx4G) fits the runner pod's memory limit (16Gi on the platform)
-        run: sbt "Test/compile; testUnit; publish"
+      - name: Import the signing key
+        env:
+          GPG_SECRET: ${{ secrets.GPG_SECRET }}
+          GPG_PASS: ${{ secrets.GPG_PASS }}
+        run: |
+          mkdir -p ~/.gnupg && chmod 700 ~/.gnupg
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          printf "%s" "$GPG_SECRET" | gpg --batch --passphrase "$GPG_PASS" --import
+          # sbt-pgp signs non-interactively, so drop the passphrase on this throwaway runner
+          KEY=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ { print $5; exit }')
+          (echo "$GPG_PASS"; echo; echo) | gpg --command-fd 0 --pinentry-mode loopback --change-passphrase "$KEY"
+          gpg --list-secret-keys
+
+      - name: Unit tests
+        run: sbt "Test/compile; testUnit"
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
-          JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=85.0 -Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"
+
+      - name: Sign and stage for Maven Central
+        run: sbt publishSigned
+        env:
+          PUBLISH_TARGET: central
+          PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
+
+      - name: List staged artifacts
+        run: find target/sona-staging -name '*.pom' | sed 's|.*/||' | sort
+
+      - name: Release to Maven Central
+        if: ${{ !inputs.dry_run }}
+        run: sbt sonaRelease
+        env:
+          PUBLISH_TARGET: central
+          PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USER }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+
+      - name: Publish to Nexus
+        if: ${{ !inputs.dry_run }}
+        run: sbt publish
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.VERSION }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
 
       # teob-cc/kafka-journal-pekko is the source of truth; lambda-house/kafka-journal-pekko is a read-only copy that
       # publishes each release to the lambda-house Nexus under the same version (its `mirror` branch does that).
       # Hand it the commit just published, tagged v<version>, with a token of the lambda-house GitHub App
       # teob-cc-mirror (Contents + Workflows write on that repository only; a deploy key cannot push workflow changes).
       - name: Token for lambda-house/kafka-journal-pekko
+        if: ${{ !inputs.dry_run }}
         id: mirror-app
         uses: actions/create-github-app-token@v2
         with:
@@ -149,6 +156,7 @@ jobs:
           repositories: kafka-journal-pekko
 
       - name: Mirror the release to lambda-house
+        if: ${{ !inputs.dry_run }}
         env:
           TOKEN: ${{ steps.mirror-app.outputs.token }}
           VERSION: ${{ steps.version.outputs.VERSION }}
@@ -159,16 +167,19 @@ jobs:
           git push --force "https://x-access-token:${TOKEN}@github.com/lambda-house/kafka-journal-pekko.git" \
             HEAD:refs/heads/master "HEAD:refs/tags/v${VERSION}"
 
+      - name: Remove the signing key
+        if: always()
+        run: rm -rf ~/.gnupg
+
       - name: Summary
         run: |
-          echo "### Published to Nexus 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "### ${{ inputs.dry_run && 'Staged (dry run)' || 'Published to Maven Central and Nexus' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Repository:** https://${{ env.NEXUS_REGISTRY }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Central:** https://central.sonatype.com/namespace/cc.teob" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
           if [ -n "${{ github.event.workflow_run.id }}" ]; then
             echo "**Gated by E2E run:** [${{ github.event.workflow_run.id }}](${{ github.event.workflow_run.html_url }})" >> $GITHUB_STEP_SUMMARY
           else
             echo "**Gated by E2E run:** none (manual dispatch)" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY

@@ -4,7 +4,7 @@ Agent takeover context for this repository. Read this first; it links everything
 
 ## What this repository is
 
-The **teob-cc fork of [evolution-gaming/kafka-journal](https://github.com/evolution-gaming/kafka-journal)** — a Kafka-first event journal with Cassandra as the eventual long-term store, exposing an Apache Pekko persistence plugin. We insourced it, migrated it to **Scala 3**, and publish it under **`cc.teob`** coordinates to the platform Nexus (`nexus-api.<base_domain>`). It is the intended scalable journal backend for the TEOB event-sourcing framework (`~/work/teob`).
+The **teob-cc fork of [evolution-gaming/kafka-journal](https://github.com/evolution-gaming/kafka-journal)** — a Kafka-first event journal with Cassandra as the eventual long-term store, exposing an Apache Pekko persistence plugin. We insourced it, migrated it to **Scala 3**, and publish it under **`cc.teob`** coordinates to Maven Central (and, for the platform, to its Nexus at `nexus-api.<base_domain>`). It is the intended scalable journal backend for the TEOB event-sourcing framework (`~/work/teob`).
 
 Key facts:
 
@@ -21,7 +21,7 @@ Key facts:
 
 Versioning is **CalVer** (`build.sbt`): base `<yyyyMM>.<minor>` bumped by hand (`versionBase`), CI stamps `<base>.<run number>` releases (run number of the *publish* workflow), local builds are `<base>-SNAPSHOT`.
 
-Release flow — **a master push is a release, but only via a green e2e**: the push runs `e2e.yml`; publishing (`publish-to-nexus.yml`) triggers on `workflow_run` of that lane and runs only when the conclusion is `success` and the triggering event was a push, checking out the exact `head_sha` e2e validated. So a release now lags a push by the e2e run (~13 min), and a red e2e means nothing is published. `workflow_dispatch` bypasses the gate entirely (escape hatch), with an optional `version` input overriding CalVer.
+Release flow — **a master push is a release, but only via a green e2e**: the push runs `e2e.yml`; publishing (`publish-to-nexus.yml`: Maven Central, then the platform Nexus, then the lambda-house mirror) triggers on `workflow_run` of that lane and runs only when the conclusion is `success` and the triggering event was a push, checking out the exact `head_sha` e2e validated. So a release now lags a push by the e2e run (~13 min), and a red e2e means nothing is published. `workflow_dispatch` bypasses the gate entirely (escape hatch), with an optional `version` input overriding CalVer, and `dry_run` to build, sign and stage without publishing anywhere. The repository is public, so every workflow runs on GitHub-hosted runners; the teob-cc self-hosted runners are not offered to public repositories.
 
 ## Documents in this repo
 

@@ -5,7 +5,7 @@ import sbt.Package.ManifestAttributes
 // CalVer (same pattern as teob's build): <yyyyMM>.<minor> base, bumped by hand;
 // CI stamps releases as <base>.<run number>, anything local is <base>-SNAPSHOT.
 // PACKAGE_VERSION (workflow_dispatch input) overrides everything.
-lazy val versionBase = "202607.01"
+lazy val versionBase = "202610.01"
 ThisBuild / version := {
   sys
     .env
@@ -43,6 +43,16 @@ lazy val commonSettings = Seq(
   organizationName := "teob-cc",
   organizationHomepage := Some(url("https://github.com/teob-cc")),
   homepage := Some(url("https://github.com/teob-cc/kafka-journal-pekko")),
+  developers := List(
+    Developer("jacum", "Tim Evdokimov", "jacum@users.noreply.github.com", url("https://github.com/jacum")),
+  ),
+  scmInfo := Some(
+    ScmInfo(
+      url("https://github.com/teob-cc/kafka-journal-pekko"),
+      "scm:git:https://github.com/teob-cc/kafka-journal-pekko.git",
+      "scm:git:git@github.com:teob-cc/kafka-journal-pekko.git",
+    ),
+  ),
   startYear := Some(2018),
   crossScalaVersions := Seq("3.8.4"),
   scalaVersion := crossScalaVersions.value.head,
