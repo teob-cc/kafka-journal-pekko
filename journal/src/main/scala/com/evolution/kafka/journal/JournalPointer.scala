@@ -15,8 +15,8 @@ import com.evolutiongaming.skafka.{Offset, Partition}
  *   the latest cutoff: the [[SeqNr]] of the latest replicated epoch record, if any, see
  *   [[EpochMark]]
  * @param purgedTo
- *   the last [[SeqNr]] of the purged incarnations of the journal, if it was ever purged: the
- *   current incarnation starts above it
+ *   the floor of the current incarnation: every [[SeqNr]] at or below it was purged, or was never
+ *   written because the incarnation started above it. A replay is not refused for these
  */
 final case class JournalPointer(
   partitionOffset: PartitionOffset,

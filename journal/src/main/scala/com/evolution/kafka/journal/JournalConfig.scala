@@ -20,11 +20,16 @@ import scala.concurrent.duration.*
  * @param headCache
  *   Configuration of head cache, which is, currently, only about enabling or disabling it. See
  *   [[HeadCache]] for more details on what is head cache and how it works.
+ * @param refuseShortReplay
+ *   A replay that would start at or below `deleteTo`, with no epoch record retained above it, fails
+ *   with [[ShortReplayError]] if `true`. If `false`, it starts at `deleteTo + 1`: what Pekko's
+ *   journal contract expects from callers that keep their state in a snapshot store.
  */
 final case class JournalConfig(
   pollTimeout: FiniteDuration = 10.millis,
   kafka: KafkaConfig = KafkaConfig("journal"),
   headCache: JournalConfig.HeadCache = JournalConfig.HeadCache.default,
+  refuseShortReplay: Boolean = true,
 )
 
 object JournalConfig {

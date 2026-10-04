@@ -70,8 +70,8 @@ private[journal] object MetaJournalStatements {
   }
 
   /**
-   * The last [[SeqNr]] of the purged incarnations of a journal: a purge keeps the head as a
-   * tombstone, so the id is never reborn at seq 1
+   * The floor of the current incarnation of a journal: every [[SeqNr]] at or below it was purged,
+   * or never written. A purge keeps the head as a tombstone, so the id is never reborn at seq 1
    */
   def addPurgedTo(table: TableName): String = {
     s"ALTER TABLE ${ table.toCql } ADD purged_to BIGINT"

@@ -36,8 +36,9 @@ import com.evolution.scassandra4.{DecodeRow, EncodeRow}
  *   the latest cutoff: the [[SeqNr]] of the latest replicated epoch record, see
  *   [[com.evolution.kafka.journal.EpochMark]]
  * @param purgedTo
- *   the last [[SeqNr]] of the purged incarnations of the journal: a purge keeps the head as a
- *   tombstone, at or above this [[SeqNr]], and the next incarnation continues above it
+ *   the floor of the current incarnation of the journal: every [[SeqNr]] at or below it was purged,
+ *   or was never written because the incarnation started above it. A purge keeps the head as a
+ *   tombstone with its [[SeqNr]] here, and the next incarnation continues above it
  */
 private[journal] final case class JournalHead(
   partitionOffset: PartitionOffset,

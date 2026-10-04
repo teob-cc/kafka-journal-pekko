@@ -203,20 +203,14 @@ private[journal] object ReplicatedCassandra {
                             val seqNrLast = events.last.seqNr
 
                             /*
-                             * A new journal, or a new incarnation of a purged one. The incarnation
-                             * continues above the head its tombstone kept, with a new record id.
+                             * A new journal, or a new incarnation of a purged one, with a new record
+                             * id. The incarnation starts at its first event: nothing below it belongs
+                             * to it, which is not a deletion. A writer continues above the head the
+                             * tombstone kept, so the id is not reborn at seq 1.
                              */
                             def insert(tombstone: Option[JournalHead]) = {
-                              val seqNrFirst = events.head.seqNr
-                              val deleteTo = seqNrFirst
-                                .prev[Option]
-                                .map { _.toDeleteTo }
-
-                              val purgedTo = tombstone.flatMap { tombstone =>
-                                // a writer that did not see the tombstone starts below it
-                                if (seqNrFirst > tombstone.seqNr) tombstone.seqNr.some
-                                else seqNrFirst.prev[Option]
-                              }
+                              val purgedTo = events.head.seqNr.prev[Option]
+                              val deleteTo = purgedTo.map { _.toDeleteTo }
 
                               expireAfter
                                 .traverse { expireAfter =>

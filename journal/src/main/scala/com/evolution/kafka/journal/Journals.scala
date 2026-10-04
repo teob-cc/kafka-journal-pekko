@@ -78,6 +78,7 @@ object Journals {
         headCache,
         log,
         conversionMetrics,
+        config.refuseShortReplay,
       )
         .withLog(log, callTimeThresholds)
       journalMetrics.fold(withLog) { metrics => withLog.withMetrics(metrics) }
@@ -95,16 +96,41 @@ object Journals {
   )(implicit
     F: MonadCancel[F, Throwable],
   ): Journals[F] = {
+    apply[F](
+      origin = origin,
+      producer = producer,
+      consumer = consumer,
+      eventualJournal = eventualJournal,
+      headCache = headCache,
+      log = log,
+      conversionMetrics = conversionMetrics,
+      refuseShortReplay = true,
+    )
+  }
+
+  def apply[F[_]: Clock: RandomIdOf: Fail: JsonCodec: MeasureDuration](
+    origin: Option[Origin],
+    producer: Producer[F],
+    consumer: Resource[F, Consumer[F]],
+    eventualJournal: EventualJournal[F],
+    headCache: HeadCache[F],
+    log: Log[F],
+    conversionMetrics: Option[ConversionMetrics[F]],
+    refuseShortReplay: Boolean,
+  )(implicit
+    F: MonadCancel[F, Throwable],
+  ): Journals[F] = {
     implicit val fromAttempt: FromAttempt[F] = FromAttempt.lift[F]
     implicit val fromJsResult: FromJsResult[F] = FromJsResult.lift[F]
 
-    apply[F](
+    of[F](
       eventual = eventualJournal,
       consumeActionRecords = ConsumeActionRecords[F](consumer),
       produce = Produce[F](producer, origin),
       headCache = headCache,
       log = log,
       conversionMetrics = conversionMetrics,
+      refuseShortReplay = refuseShortReplay,
     )
   }
 
@@ -115,6 +141,34 @@ object Journals {
     headCache: HeadCache[F],
     log: Log[F],
     conversionMetrics: Option[ConversionMetrics[F]],
+  )(implicit
+    F: MonadCancel[F, Throwable],
+  ): Journals[F] = {
+    of[F](
+      eventual = eventual,
+      consumeActionRecords = consumeActionRecords,
+      produce = produce,
+      headCache = headCache,
+      log = log,
+      conversionMetrics = conversionMetrics,
+      refuseShortReplay = true,
+    )
+  }
+
+  /**
+   * @param refuseShortReplay
+   *   a replay that would start at or below `deleteTo`, with no epoch record retained above it,
+   *   fails with [[ShortReplayError]]. With `false` it starts at `deleteTo + 1`, as Pekko's journal
+   *   contract expects from a journal whose callers keep their state in a snapshot store
+   */
+  def of[F[_]: RandomIdOf: MeasureDuration](
+    eventual: EventualJournal[F],
+    consumeActionRecords: ConsumeActionRecords[F],
+    produce: Produce[F],
+    headCache: HeadCache[F],
+    log: Log[F],
+    conversionMetrics: Option[ConversionMetrics[F]],
+    refuseShortReplay: Boolean,
   )(implicit
     F: MonadCancel[F, Throwable],
   ): Journals[F] = {
@@ -256,7 +310,9 @@ object Journals {
                             }
                         }
                       }
-                      event <- readEventual(seqNr).flatMapLast {
+                      // a purge precedes the appends: the replicated journal is of a purged incarnation
+                      eventual = if (a.purged) Stream.empty[F, EventRecord[A]] else readEventual(seqNr)
+                      event <- eventual.flatMapLast {
                         case Some(event) =>
                           event
                             .seqNr
@@ -299,10 +355,15 @@ object Journals {
              * A replay starts at the latest cutoff of the replicated head, an epoch record, when it
              * is above both `from` and `deleteTo`. A cutoff still in the Kafka tail is not known
              * here: the replay then starts at the previous one and passes through it.
+             *
+             * A replay that would still start at or below `deleteTo` is refused: the events it asks
+             * for are gone. The events of a purged incarnation are not asked for: a purge is not
+             * a short replay.
              */
             def replayFrom(head: HeadInfo): F[SeqNr] = {
               head match {
                 case HeadInfo.Purge => from.pure[F]
+                case a: HeadInfo.Append if a.purged => from.pure[F]
                 case head =>
                   val deleteToTail = head match {
                     case a: HeadInfo.Append => a.deleteTo
@@ -311,12 +372,22 @@ object Journals {
                   }
                   eventual
                     .pointer(key)
-                    .map { pointer =>
+                    .flatMap { pointer =>
                       val deleteTo = deleteToTail max pointer.flatMap { _.deleteTo }
-                      pointer
+                      val from1 = pointer
                         .flatMap { _.cutoff }
                         .filter { cutoff => cutoff > from && deleteTo.forall { _.value < cutoff } }
                         .getOrElse(from)
+                      val purgedTo = pointer.flatMap { _.purgedTo }
+                      deleteTo match {
+                        case Some(deleteTo)
+                            if refuseShortReplay &&
+                              from1 <= deleteTo.value &&
+                              purgedTo.forall { _ < deleteTo.value } =>
+                          ShortReplayError(key, from, deleteTo).raiseError[F, SeqNr]
+                        case _ =>
+                          from1.pure[F]
+                      }
                     }
               }
             }

@@ -105,8 +105,9 @@ abstract class JournalIntSpec[A] extends AsyncWordSpec with JournalSuite {
             _ = pointer.map { _.partition } shouldEqual partition.some
             pointer <- journal.pointer
             _ = pointer shouldEqual seqNr.some
-            events <- journal.read
-            _ = events shouldEqual List.empty
+            // every event is deleted and no epoch record is retained: a replay is refused
+            events <- journal.read.attempt
+            _ = events.left.map { _.getClass } shouldEqual Left(classOf[ShortReplayError])
             pointer <- journal.purge
             _ = pointer.map { _.partition } shouldEqual partition.some
             // the purged id keeps its head seqNr: it is never reborn at seq 1

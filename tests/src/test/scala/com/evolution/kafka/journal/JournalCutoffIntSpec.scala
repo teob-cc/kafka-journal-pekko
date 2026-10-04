@@ -18,7 +18,8 @@ import scala.util.control.NoStackTrace
 
 /**
  * A journal whose appends mark epoch records: the replicated head carries the latest cutoff, and a
- * replay starts there.
+ * replay starts there. A replay that would start at or below deleteTo, with no epoch record above
+ * it, is refused.
  */
 class JournalCutoffIntSpec extends AsyncWordSpec with JournalSuite {
   import JournalCutoffIntSpec.*
@@ -111,6 +112,27 @@ class JournalCutoffIntSpec extends AsyncWordSpec with JournalSuite {
         result.run(2.minutes)
       }
 
+      s"refuse a replay that starts at or below deleteTo with no epoch record above it, $name" in {
+        val result = for {
+          key <- Key.random[IO]("journal")
+          journal = journals(key)
+          _ <- journal.append(events(1, 2, 3, 4, 5))
+          _ <- journal.delete(DeleteTo(SeqNr.unsafe(2)))
+          // the delete may still sit in the Kafka tail here
+          result <- replay(journal).attempt
+          _ = result.left.map(_.getClass) shouldEqual Left(classOf[ShortReplayError])
+          _ <- replicated(key)(3, 4, 5)
+          result <- replay(journal).attempt
+          _ = result.left.map(_.getClass) shouldEqual Left(classOf[ShortReplayError])
+          result <- replay(journal, SeqNr.unsafe(2)).attempt
+          _ = result.left.map(_.getClass) shouldEqual Left(classOf[ShortReplayError])
+          // a replay that starts above deleteTo is served
+          seqNrs <- replay(journal, SeqNr.unsafe(3))
+          _ = seqNrs shouldEqual List(3, 4, 5)
+        } yield {}
+        result.run(2.minutes)
+      }
+
       s"start a replay at the one cutoff, $name" in {
         val result = for {
           key <- Key.random[IO]("journal")
@@ -158,6 +180,30 @@ class JournalCutoffIntSpec extends AsyncWordSpec with JournalSuite {
           _ = seqNrs shouldEqual List(8, 9)
           seqNrs <- replay(journal, SeqNr.unsafe(9))
           _ = seqNrs shouldEqual List(9)
+        } yield {}
+        result.run(2.minutes)
+      }
+
+      s"serve a purged journal and its next incarnation, $name" in {
+        val result = for {
+          key <- Key.random[IO]("journal")
+          journal = journals(key)
+          _ <- journal.append(events(1, 2, 3))
+          _ <- journal.delete(DeleteTo(SeqNr.unsafe(3)))
+          _ <- journal.purge
+          // the purge may still sit in the Kafka tail here
+          seqNrs <- replay(journal)
+          _ = seqNrs shouldEqual Nil
+          pointer <- journal.pointer
+          _ = pointer shouldEqual SeqNr.unsafe(3).some
+          _ <- journal.append(events(4, 5))
+          seqNrs <- replay(journal)
+          _ = seqNrs shouldEqual List(4, 5)
+          _ <- replicated(key)(4, 5)
+          seqNrs <- replay(journal)
+          _ = seqNrs shouldEqual List(4, 5)
+          pointer <- eventualJournal.pointer(key)
+          _ = pointer.flatMap { _.purgedTo } shouldEqual SeqNr.unsafe(3).some
         } yield {}
         result.run(2.minutes)
       }

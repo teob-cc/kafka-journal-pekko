@@ -131,17 +131,21 @@ object HeadInfo {
 
         def onDelete(a: Append, b: Delete) = {
           val deleteTo = a.deleteTo.fold(b.deleteTo) { _ max b.deleteTo }
-          Append(a.offset, a.seqNr, deleteTo.some)
+          a.copy(deleteTo = deleteTo.some)
         }
 
         (a, b) match {
-          case (a: Append, b: Append) => Append(a.offset min b.offset, a.seqNr max b.seqNr, a.deleteTo max b.deleteTo)
+          // a purge between `a` and `b` removed `a`
+          case (_: Append, b: Append) if b.purged => b
+          case (a: Append, b: Append) =>
+            Append(a.offset min b.offset, a.seqNr max b.seqNr, a.deleteTo max b.deleteTo, a.purged)
           case (a: Append, b: Delete) => onDelete(a, b)
           case (_: Append, Purge) => Purge
+          case (_: Delete, b: Append) if b.purged => b
           case (a: Delete, b: Append) => onDelete(b, a)
           case (a: Delete, b: Delete) => Delete(a.deleteTo max b.deleteTo)
           case (_: Delete, Purge) => Purge
-          case (Purge, b: Append) => b
+          case (Purge, b: Append) => b.copy(purged = true)
           case (Purge, b: Delete) => b
           case (Purge, Purge) => Purge
         }
@@ -163,11 +167,15 @@ object HeadInfo {
    *   [[SeqNr]] of the _last_ non-replicated event.
    * @param deleteTo
    *   [[SeqNr]] of the _last_ deleted event, if any.
+   * @param purged
+   *   a purge precedes the events: the replicated journal belongs to a purged incarnation and is
+   *   not read.
    */
   final case class Append(
     offset: Offset,
     seqNr: SeqNr,
     deleteTo: Option[DeleteTo],
+    purged: Boolean = false,
   ) extends NonEmpty
 
   /**
@@ -242,7 +250,7 @@ object HeadInfo {
         case a: Append => a.copy(seqNr = range.to)
         case a: Delete => Append(offset, range.to, deleteToOf(a.deleteTo))
         case Empty => append
-        case Purge => append
+        case Purge => append.copy(purged = true)
       }
     }
 

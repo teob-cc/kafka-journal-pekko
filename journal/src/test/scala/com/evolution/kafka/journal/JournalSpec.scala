@@ -267,13 +267,14 @@ class JournalSpec extends AnyWordSpec with Matchers {
       implicit val measureDuration: MeasureDuration[StateT] = MeasureDuration.fromClock(clock)
       val log = Log.empty[StateT]
 
-      val journals = Journals[StateT](
+      val journals = Journals.of[StateT](
         eventual = StateT.eventualJournal,
         consumeActionRecords = StateT.consumeActionRecords,
         produce = Produce(StateT.produceAction, none),
         headCache = StateT.headCache,
         log = log,
         conversionMetrics = none,
+        refuseShortReplay = true,
       )
 
       val (state, partitionOffset) = journals(JournalSpec.key)
@@ -315,14 +316,27 @@ class JournalSpec extends AnyWordSpec with Matchers {
       }
     }
 
+    // the head of the actions not replicated yet, as the real head cache sees it
+    val headCache: HeadCache[StateT] = { (_: Key, _: Partition, _: Offset) =>
+      StateT { state =>
+        val replicated = state.replicatedState.offset
+        val headInfo = state
+          .records
+          .filter { record => replicated.forall { record.offset > _ } }
+          .foldLeft(HeadInfo.empty) { (info, record) => info(record.action.header, record.offset) }
+        (state, headInfo.some)
+      }
+    }
+
     def journalOf(behind: Int): Journal[StateT] = {
-      val journals = Journals[StateT](
+      val journals = Journals.of[StateT](
         eventual = StateT.eventualJournal,
         consumeActionRecords = StateT.consumeActionRecords,
         produce = Produce(produceActionOf(behind), none),
-        headCache = StateT.headCache,
+        headCache = headCache,
         log = Log.empty[StateT],
         conversionMetrics = none,
+        refuseShortReplay = true,
       )
       journals(JournalSpec.key)
     }
@@ -377,6 +391,48 @@ class JournalSpec extends AnyWordSpec with Matchers {
           from1 <- seqNrsOf(journal, SeqNr.min)
         } yield from1
         run(result) shouldEqual List(1, 2, 3, 4, 5, 6, 7)
+      }
+    }
+
+    for {
+      behind <- List(0, 1, 2, 3)
+    } {
+
+      s"refuse a replay that starts at or below deleteTo with no epoch record above it, $behind actions behind" in {
+        val journal = journalOf(behind)
+        val result = for {
+          _ <- appendAll(journal, marks = false)
+          _ <- journal.delete(DeleteTo(SeqNr.unsafe(4)))
+          from1 <- seqNrsOf(journal, SeqNr.min).attempt
+          from4 <- seqNrsOf(journal, SeqNr.unsafe(4)).attempt
+          from5 <- seqNrsOf(journal, SeqNr.unsafe(5))
+        } yield (from1.left.map { _.getClass }, from4.left.map { _.getClass }, from5)
+        run(result) shouldEqual (
+          (Left(classOf[ShortReplayError]), Left(classOf[ShortReplayError]), List(5, 6, 7))
+        )
+      }
+
+      s"serve a replay below deleteTo from an epoch record above it, $behind actions behind" in {
+        val journal = journalOf(behind)
+        val result = for {
+          _ <- appendAll(journal, marks = true)
+          _ <- journal.delete(DeleteTo(SeqNr.unsafe(4)))
+          from1 <- seqNrsOf(journal, SeqNr.min)
+        } yield from1
+        run(result) shouldEqual List(5, 6, 7)
+      }
+
+      s"serve a replay of a purged journal, and of its next incarnation, $behind actions behind" in {
+        val journal = journalOf(behind)
+        val result = for {
+          _ <- appendAll(journal, marks = false)
+          _ <- journal.purge
+          purged <- seqNrsOf(journal, SeqNr.min)
+          pointer <- journal.pointer
+          _ <- journal.append(events(8, 9))
+          reborn <- seqNrsOf(journal, SeqNr.min)
+        } yield (purged, pointer, reborn)
+        run(result) shouldEqual ((List.empty[Long], SeqNr.unsafe(7).some, List(8, 9)))
       }
     }
 
@@ -658,13 +714,15 @@ object JournalSpec {
       implicit val fromJsResult: FromJsResult[F] = FromJsResult.lift[F]
       val log = Log.empty[F]
 
-      val journal = Journals[F](
+      // the combinations below read after deletes from seq 1: the replay starts at deleteTo + 1
+      val journal = Journals.of[F](
         eventual = eventual,
         consumeActionRecords = consumeActionRecords,
         produce = Produce(produceAction, none),
         headCache = headCache,
         log = log,
         conversionMetrics = none,
+        refuseShortReplay = false,
       )
         .withLog(log)
         .withMetrics(JournalMetrics.empty[F])
