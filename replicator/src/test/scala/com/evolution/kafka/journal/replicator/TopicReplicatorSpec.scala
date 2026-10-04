@@ -865,6 +865,8 @@ object TopicReplicatorSpec {
     final case class Purge(latency: FiniteDuration = replicationLatency, actions: Int) extends Metrics
 
     final case class Round(duration: FiniteDuration = 0.millis, records: Int) extends Metrics
+
+    final case class Gap(partition: Int, records: Long) extends Metrics
   }
 
   implicit def monoidDataF[A: Monoid]: Monoid[StateT[A]] = Applicative.monoid[StateT, A]
@@ -1054,6 +1056,12 @@ object TopicReplicatorSpec {
     def round(duration: FiniteDuration, records: Int): StateT[Unit] = {
       StateT { s =>
         s + Metrics.Round(duration = duration, records = records)
+      }
+    }
+
+    def gap(partition: Partition, records: Long): StateT[Unit] = {
+      StateT { s =>
+        s + Metrics.Gap(partition = partition.value, records = records)
       }
     }
   }

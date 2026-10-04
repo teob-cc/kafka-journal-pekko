@@ -38,6 +38,12 @@ trait TopicReplicatorMetrics[F[_]] {
    * Accounts how long and how many records were processed in single batch (poll)
    */
   def round(latency: FiniteDuration, records: Int): F[Unit]
+
+  /**
+   * Accounts Kafka records that left the log before they were replicated: on assignment, the log of
+   * a partition started above the replicator's pointer
+   */
+  def gap(partition: Partition, records: Long): F[Unit]
 }
 
 object TopicReplicatorMetrics {
@@ -66,6 +72,8 @@ object TopicReplicatorMetrics {
       def purge(measurements: Measurements): F[Unit] = unit
 
       def round(duration: FiniteDuration, records: Int): F[Unit] = unit
+
+      def gap(partition: Partition, records: Long): F[Unit] = unit
     }
   }
 
@@ -135,6 +143,12 @@ object TopicReplicatorMetrics {
       labels = LabelNames("topic", "expiration"),
     )
 
+    val gapCounter = registry.counter(
+      name = s"${ prefix }_gap_records",
+      help = "Number of Kafka records that left the log before they were replicated",
+      labels = LabelNames("topic", "partition"),
+    )
+
     for {
       replicationSummary <- replicationSummary
       deliverySummary <- deliverySummary
@@ -145,6 +159,7 @@ object TopicReplicatorMetrics {
       roundRecordsSummary <- roundRecordsSummary
       clientVersionGauge <- clientVersionGauge
       expirationDurationGauge <- expirationDurationGauge
+      gapCounter <- gapCounter
     } yield { (topic: Topic) =>
       {
 
@@ -188,6 +203,10 @@ object TopicReplicatorMetrics {
               _ <- roundSummary.labels(topic).observe(duration.toNanos.nanosToSeconds)
               _ <- roundRecordsSummary.labels(topic).observe(records.toDouble)
             } yield {}
+          }
+
+          def gap(partition: Partition, records: Long): F[Unit] = {
+            gapCounter.labels(topic, partition.show).inc(records.toDouble)
           }
         }
       }

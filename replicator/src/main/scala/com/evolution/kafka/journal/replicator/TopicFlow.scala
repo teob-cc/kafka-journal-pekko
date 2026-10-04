@@ -8,7 +8,11 @@ import com.evolutiongaming.skafka.{Offset, Partition}
 
 private[journal] trait TopicFlow[F[_]] {
 
-  def assign(partitions: Nes[Partition]): F[Unit]
+  /**
+   * @param logStart
+   *   the offset each assigned partition's log starts at, as far as it is known
+   */
+  def assign(partitions: Nes[Partition], logStart: Map[Partition, Offset]): F[Unit]
 
   def apply(records: Nem[Partition, Nel[ConsRecord]]): F[Map[Partition, Offset]]
 
@@ -21,7 +25,7 @@ private[journal] object TopicFlow {
 
   def empty[F[_]: Applicative]: TopicFlow[F] = new TopicFlow[F] {
 
-    def assign(partitions: Nes[Partition]): F[Unit] = ().pure[F]
+    def assign(partitions: Nes[Partition], logStart: Map[Partition, Offset]): F[Unit] = ().pure[F]
 
     def apply(records: Nem[Partition, Nel[ConsRecord]]): F[Map[Partition, Offset]] =
       Map.empty[Partition, Offset].pure[F]
@@ -35,7 +39,9 @@ private[journal] object TopicFlow {
 
     def mapK[G[_]](f: F ~> G): TopicFlow[G] = new TopicFlow[G] {
 
-      def assign(partitions: Nes[Partition]): G[Unit] = f(self.assign(partitions))
+      def assign(partitions: Nes[Partition], logStart: Map[Partition, Offset]): G[Unit] = {
+        f(self.assign(partitions, logStart))
+      }
 
       def apply(records: Nem[Partition, Nel[ConsRecord]]): G[Map[Partition, Offset]] = f(self(records))
 

@@ -11,14 +11,18 @@ import com.evolution.kafka.journal.ExpireAfter.implicits.*
 import com.evolution.kafka.journal.IOSuite.*
 import com.evolution.kafka.journal.Journal.DataIntegrityConfig
 import com.evolution.kafka.journal.eventual.cassandra.{EventualCassandra, EventualCassandraConfig}
-import com.evolution.kafka.journal.eventual.{EventualJournal, EventualRead}
+import com.evolution.kafka.journal.eventual.{EventualJournal, EventualRead, ReplicatedJournal}
 import com.evolution.kafka.journal.util.PureConfigHelper.*
 import com.evolution.kafka.journal.util.{ActorSystemOf, Fail}
+import com.evolution.scache.CacheMetrics
 import com.evolution.scassandra4.CassandraClusterOf
 import com.evolutiongaming.catshelper.*
 import com.evolutiongaming.retry.{Retry, Strategy}
-import com.evolutiongaming.skafka.Offset
+import com.evolutiongaming.skafka.consumer.ConsumerMetrics
+import com.evolutiongaming.skafka.{Offset, Partition, Topic}
 import com.typesafe.config.{Config, ConfigFactory}
+import org.apache.kafka.clients.admin.{Admin, NewTopic, RecordsToDelete}
+import org.apache.kafka.common.TopicPartition
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
@@ -26,7 +30,9 @@ import play.api.libs.json.Json
 import pureconfig.ConfigSource
 
 import java.time.Instant
+import java.util.UUID
 import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
 import scala.util.control.NoStackTrace
 
 class ReplicatorIntSpec extends AsyncWordSpec with BeforeAndAfterAll with Matchers {
@@ -134,6 +140,8 @@ class ReplicatorIntSpec extends AsyncWordSpec with BeforeAndAfterAll with Matche
 
     val Error = new RuntimeException with NoStackTrace
 
+    object GapNotReported extends RuntimeException("no gap reported") with NoStackTrace
+
     val eventualRead = EventualRead.summon[IO, Payload]
 
     def read(key: Key)(until: List[EventRecord[Payload]] => Boolean) = {
@@ -216,6 +224,91 @@ class ReplicatorIntSpec extends AsyncWordSpec with BeforeAndAfterAll with Matche
         pointer <- journal.pointer
         _ = pointer shouldEqual none
       } yield {}
+      result.run(5.minutes)
+    }
+
+    "count and report a gap between its pointer and the log start offset" in {
+
+      def replicatorOf(config: ReplicatorConfig, gaps: Ref[IO, List[(Partition, Long)]]) = {
+        val topicReplicatorMetrics = new TopicReplicatorMetrics[IO] {
+          def append(
+            events: Int,
+            bytes: Long,
+            clientVersion: String,
+            expiration: String,
+            measurements: TopicReplicatorMetrics.Measurements,
+          ): IO[Unit] = IO.unit
+
+          def delete(measurements: TopicReplicatorMetrics.Measurements): IO[Unit] = IO.unit
+
+          def purge(measurements: TopicReplicatorMetrics.Measurements): IO[Unit] = IO.unit
+
+          def round(latency: FiniteDuration, records: Int): IO[Unit] = IO.unit
+
+          def gap(partition: Partition, records: Long): IO[Unit] = gaps.update { (partition, records) :: _ }
+        }
+        val metrics = new Replicator.Metrics[IO] {
+          def journal: Option[ReplicatedJournal.Metrics[IO]] = none
+          def replicator: Option[Topic => TopicReplicatorMetrics[IO]] = { (_: Topic) => topicReplicatorMetrics }.some
+          def consumer: Option[ConsumerMetrics[IO]] = none
+          def cache: Option[CacheMetrics.Name => CacheMetrics[IO]] = none
+        }
+        implicit val logOf: LogOf[IO] = LogOf.empty[IO]
+        implicit val kafkaConsumerOf: KafkaConsumerOf[IO] = KafkaConsumerOf[IO]()
+        for {
+          replicator <- Replicator.make[IO](config, cassandraClusterOf, none, metrics.some)
+          _ <- replicator.background
+        } yield {}
+      }
+
+      def admin(config: ReplicatorConfig) = {
+        val bootstrapServers = config.kafka.consumer.common.bootstrapServers.toList.mkString(",")
+        Resource.make {
+          IO.blocking { Admin.create(Map[String, AnyRef](("bootstrap.servers", bootstrapServers)).asJava) }
+        } { admin => IO.blocking { admin.close() } }
+      }
+
+      val result = for {
+        topic <- IO { s"gap-${ UUID.randomUUID() }" }
+        config <- IO { ConfigFactory.load("replicator.conf") }
+        config <- ReplicatorConfig.fromConfig[IO](config)
+        config <- config.copy(topicPrefixes = Nel.of(topic), topicDiscoveryInterval = 100.millis).pure[IO]
+        gaps <- Ref[IO].of(List.empty[(Partition, Long)])
+        result <- admin(config).use { admin =>
+          val partition = new TopicPartition(topic, 0)
+          for {
+            _ <- IO.blocking { admin.createTopics(List(new NewTopic(topic, 1, 1.toShort)).asJava).all().get() }
+            key = Key(id = "gap", topic = topic)
+            journal = journals(key)
+            // a replicator replicates the first append, at offset 0, and stops
+            _ <- replicatorOf(config, gaps).use { _ =>
+              for {
+                _ <- append(journal, Nel.of(event(1)))
+                _ <- read(key)(_.nonEmpty)
+              } yield {}
+            }
+            // two appends leave the log while no replicator runs: the log starts at offset 3
+            _ <- append(journal, Nel.of(event(2)))
+            _ <- append(journal, Nel.of(event(3)))
+            _ <- append(journal, Nel.of(event(4)))
+            _ <- IO.blocking {
+              admin.deleteRecords(Map((partition, RecordsToDelete.beforeOffset(3L))).asJava).all().get()
+            }
+            gaps0 <- gaps.get
+            _ = gaps0 shouldEqual Nil
+            // the next replicator finds its pointer at offset 0 and the log at offset 3
+            _ <- replicatorOf(config, gaps).use { _ =>
+              val gapReported = gaps.get.flatMap { gaps =>
+                if (gaps.isEmpty) GapNotReported.raiseError[IO, Unit] else IO.unit
+              }
+              Retry[IO, Throwable](strategy).apply(gapReported)
+            }
+            gaps <- gaps.get
+          } yield {
+            gaps shouldEqual List((Partition.unsafe(0), 2L))
+          }
+        }
+      } yield result
       result.run(5.minutes)
     }
 

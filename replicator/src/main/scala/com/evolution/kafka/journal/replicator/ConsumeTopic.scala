@@ -47,7 +47,23 @@ private[journal] object ConsumeTopic {
 
         def onPartitionsAssigned(partitions: Nes[TopicPartition]): RebalanceCallback[F, Unit] = {
           val partitions1 = partitions.map { _.partition }
-          topicFlow.assign(partitions1).lift >> topicCommit.onPartitionsAssigned(partitions1)
+          val logStart = RebalanceCallback
+            .api[F]
+            .beginningOffsets(partitions)
+            .map { offsets => offsets.map { case (partition, offset) => (partition.partition, offset) } }
+            .handleErrorWith { e =>
+              log
+                .warn(
+                  s"cannot compare the replicated offsets with the log start of ${ partitions1.mkString_(",") }: $e",
+                )
+                .lift
+                .map { _ => Map.empty[Partition, Offset] }
+            }
+          for {
+            logStart <- logStart
+            _ <- topicFlow.assign(partitions1, logStart).lift
+            _ <- topicCommit.onPartitionsAssigned(partitions1)
+          } yield {}
         }
 
         def onPartitionsRevoked(partitions: Nes[TopicPartition]): RebalanceCallback[F, Unit] = {

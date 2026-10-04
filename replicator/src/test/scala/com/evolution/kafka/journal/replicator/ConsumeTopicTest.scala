@@ -202,7 +202,7 @@ object ConsumeTopicTest {
         }
         val topicFlow: TopicFlow[StateT] = new TopicFlow[StateT] {
 
-          def assign(partitions: Nes[Partition]): StateT[Unit] = {
+          def assign(partitions: Nes[Partition], logStart: Map[Partition, Offset]): StateT[Unit] = {
             StateT.unit {
               _ + Action.FlowAssignPartitions(partitions)
             }

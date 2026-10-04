@@ -112,8 +112,41 @@ private[journal] object TopicReplicator {
 
           new TopicFlow[F] {
 
-            def assign(partitions: Nes[Partition]): F[Unit] = {
-              log.info(s"assign ${ partitions.mkString_(",") }")
+            def assign(partitions: Nes[Partition], logStart: Map[Partition, Offset]): F[Unit] = {
+
+              /*
+               * Records between the replicated offset and the start of the log left it before
+               * they were replicated: a stall longer than the topic's retention. The consumer
+               * resets to the earliest offset and goes on, so the gap is counted and reported here.
+               */
+              def gap(partition: Partition, logStart: Offset) = {
+                for {
+                  offset <- journal(partition).use { _.offsets.get }
+                  next = offset.fold { Offset.min.some } { _.inc[Try].toOption }
+                  records = next.fold(0L) { next => logStart.value - next.value }
+                  _ <- {
+                    if (records > 0) {
+                      val replicated = offset.fold("none") { _.show }
+                      for {
+                        _ <- metrics.gap(partition, records)
+                        _ <- log.error(
+                          s"partition $partition: $records records left the log before they were replicated, " +
+                            s"replicated offset: $replicated, log start offset: $logStart",
+                        )
+                      } yield {}
+                    } else {
+                      ().pure[F]
+                    }
+                  }
+                } yield {}
+              }
+
+              for {
+                _ <- log.info(s"assign ${ partitions.mkString_(",") }")
+                _ <- partitions.toList.traverse_ { partition =>
+                  logStart.get(partition).traverse_ { logStart => gap(partition, logStart) }
+                }
+              } yield {}
             }
 
             def apply(records: Nem[Partition, Nel[ConsRecord]]): F[Map[Partition, Offset]] = {
