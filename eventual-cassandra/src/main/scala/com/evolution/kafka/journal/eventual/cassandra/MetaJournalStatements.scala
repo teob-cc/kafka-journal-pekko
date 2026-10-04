@@ -42,6 +42,7 @@ private[journal] object MetaJournalStatements {
       |origin TEXT,
       |properties MAP<TEXT,TEXT>,
       |metadata TEXT,
+      |cutoff BIGINT,
       |PRIMARY KEY ((topic, segment), id))
       |""".stripMargin
 
@@ -58,6 +59,13 @@ private[journal] object MetaJournalStatements {
 
   def addRecordId(table: TableName): String = {
     s"ALTER TABLE ${ table.toCql } ADD record_id UUID"
+  }
+
+  /**
+   * The latest cutoff: the [[SeqNr]] of the latest replicated epoch record, see [[EpochMark]]
+   */
+  def addCutoff(table: TableName): String = {
+    s"ALTER TABLE ${ table.toCql } ADD cutoff BIGINT"
   }
 
   trait Insert[F[_]] {
@@ -97,8 +105,9 @@ private[journal] object MetaJournalStatements {
            |expire_on,
            |record_id,
            |origin,
-           |properties)
-           |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           |properties,
+           |cutoff)
+           |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            |""".stripMargin
 
       query
@@ -142,7 +151,7 @@ private[journal] object MetaJournalStatements {
 
       val query =
         s"""
-           |SELECT partition, offset, segment_size, seq_nr, delete_to, expire_after, expire_on, record_id FROM ${ name.toCql }
+           |SELECT partition, offset, segment_size, seq_nr, delete_to, expire_after, expire_on, record_id, cutoff FROM ${ name.toCql }
            |WHERE id = ?
            |AND topic = ?
            |AND segment = ?
@@ -183,7 +192,7 @@ private[journal] object MetaJournalStatements {
 
       val query =
         s"""
-           |SELECT partition, offset, seq_nr FROM ${ name.toCql }
+           |SELECT partition, offset, seq_nr, delete_to, cutoff FROM ${ name.toCql }
            |WHERE id = ?
            |AND topic = ?
            |AND segment = ?
@@ -203,7 +212,12 @@ private[journal] object MetaJournalStatements {
             for {
               row <- row
             } yield {
-              JournalPointer(partitionOffset = row.decode[PartitionOffset], seqNr = row.decode[SeqNr])
+              JournalPointer(
+                partitionOffset = row.decode[PartitionOffset],
+                seqNr = row.decode[SeqNr],
+                deleteTo = row.decode[Option[DeleteTo]]("delete_to"),
+                cutoff = row.decode[Option[SeqNr]]("cutoff"),
+              )
             }
         }
     }
@@ -463,6 +477,116 @@ private[journal] object MetaJournalStatements {
               .encode(seqNr)
               .encode("updated", timestamp)
               .encode(expiry)
+              .setConsistencyLevel(consistencyConfig.value)
+              .first
+              .void
+        }
+    }
+  }
+
+  trait UpdateSeqNrAndCutoff[F[_]] {
+    def apply(
+      key: Key,
+      segment: SegmentNr,
+      partitionOffset: PartitionOffset,
+      timestamp: Instant,
+      seqNr: SeqNr,
+      cutoff: SeqNr,
+    ): F[Unit]
+  }
+
+  object UpdateSeqNrAndCutoff {
+
+    def of[F[_]: Monad: CassandraSession](
+      name: TableName,
+      consistencyConfig: CassandraConsistencyConfig.Write,
+    ): F[UpdateSeqNrAndCutoff[F]] = {
+
+      val query =
+        s"""
+           |UPDATE ${ name.toCql }
+           |SET partition = ?, offset = ?, seq_nr = ?, cutoff = ?, updated = ?
+           |WHERE id = ?
+           |AND topic = ?
+           |AND segment = ?
+           |""".stripMargin
+
+      query
+        .prepare
+        .map {
+          prepared => (
+            key: Key,
+            segment: SegmentNr,
+            partitionOffset: PartitionOffset,
+            timestamp: Instant,
+            seqNr: SeqNr,
+            cutoff: SeqNr,
+          ) =>
+            prepared
+              .bind()
+              .encode(key)
+              .encode(segment)
+              .encode(partitionOffset)
+              .encode(seqNr)
+              .encode("cutoff", cutoff)
+              .encode("updated", timestamp)
+              .setConsistencyLevel(consistencyConfig.value)
+              .first
+              .void
+        }
+    }
+  }
+
+  trait UpdateExpiryAndCutoff[F[_]] {
+
+    def apply(
+      key: Key,
+      segment: SegmentNr,
+      partitionOffset: PartitionOffset,
+      timestamp: Instant,
+      seqNr: SeqNr,
+      expiry: Expiry,
+      cutoff: SeqNr,
+    ): F[Unit]
+  }
+
+  object UpdateExpiryAndCutoff {
+
+    def of[F[_]: Monad: CassandraSession](
+      name: TableName,
+      consistencyConfig: CassandraConsistencyConfig.Write,
+    ): F[UpdateExpiryAndCutoff[F]] = {
+
+      val query =
+        s"""
+           |UPDATE ${ name.toCql }
+           |SET partition = ?, offset = ?, seq_nr = ?, updated = ?, expire_after = ?, expire_on = ?, cutoff = ?
+           |WHERE id = ?
+           |AND topic = ?
+           |AND segment = ?
+           |""".stripMargin
+
+      query
+        .prepare
+        .map {
+          prepared => (
+            key: Key,
+            segment: SegmentNr,
+            partitionOffset: PartitionOffset,
+            timestamp: Instant,
+            seqNr: SeqNr,
+            expiry: Expiry,
+            cutoff: SeqNr,
+          ) =>
+            prepared
+              .bind()
+              .encode(key)
+              .encode(segment)
+              .encode(partitionOffset)
+              .encode(seqNr)
+              .encode("updated", timestamp)
+              .encode(expiry)
+              .encode("cutoff", cutoff)
               .setConsistencyLevel(consistencyConfig.value)
               .first
               .void

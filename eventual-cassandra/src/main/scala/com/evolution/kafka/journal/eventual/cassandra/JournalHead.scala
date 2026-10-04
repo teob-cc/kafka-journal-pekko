@@ -32,6 +32,9 @@ import com.evolution.scassandra4.{DecodeRow, EncodeRow}
  *   not have it, thus while al least one record in `metajournal` table does not have `record_id`
  *   field - it should be optional. `metajournal` record can be _created_ with `record_id` field,
  *   but never updated!
+ * @param cutoff
+ *   the latest cutoff: the [[SeqNr]] of the latest replicated epoch record, see
+ *   [[com.evolution.kafka.journal.EpochMark]]
  */
 private[journal] final case class JournalHead(
   partitionOffset: PartitionOffset,
@@ -40,6 +43,7 @@ private[journal] final case class JournalHead(
   deleteTo: Option[DeleteTo] = none,
   expiry: Option[Expiry] = none,
   recordId: Option[RecordId] = none,
+  cutoff: Option[SeqNr] = none,
 )
 
 private[journal] object JournalHead {
@@ -57,6 +61,7 @@ private[journal] object JournalHead {
           deleteTo = row.decode[Option[DeleteTo]]("delete_to"),
           expiry = row.decode[Option[Expiry]],
           recordId = row.decode[Option[RecordId]]("record_id"),
+          cutoff = row.decode[Option[SeqNr]]("cutoff"),
         )
       }
   }
@@ -74,6 +79,7 @@ private[journal] object JournalHead {
           .encodeSome(value.deleteTo)
           .encode(value.expiry)
           .encodeSome("record_id", value.recordId)
+          .encodeSome("cutoff", value.cutoff)
       }
     }
   }

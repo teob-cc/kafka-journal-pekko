@@ -72,6 +72,62 @@ class ReplicatedCassandraTest extends AnyFunSuite with Matchers {
 
     val suffix = s"segmentSize: $segmentSize, segments: $segments"
 
+    test(s"keep the latest cutoff in the head, $suffix") {
+      val key0 = Key(id = "id0", topic = topic0)
+      val key1 = Key(id = "id1", topic = topic0)
+
+      // the events of one append action share its headers, and so its epoch mark
+      def append(
+        key: Key,
+        offset: Int,
+        seqNrs: Nel[Int],
+        mark: Option[String],
+      ) = {
+        val events = seqNrs.map { seqNr =>
+          val event = eventRecordOf(SeqNr.unsafe(seqNr), PartitionOffset(Partition.min, Offset.unsafe(offset))).event
+          mark.fold(event) { mark => event.copy(headers = event.headers + ((EpochMark.header, mark))) }
+        }
+        journal.append(key, Partition.min, Offset.unsafe(offset), timestamp0, none, events)
+      }
+
+      def cutoff(state: State, key: Key) = {
+        for {
+          entries <- state.metaJournal.get((key.topic, segmentOfId.metaJournal(key)))
+          entry <- entries.get(key.id)
+          cutoff <- entry.journalHead.cutoff
+        } yield cutoff.value
+      }
+
+      val stateT = for {
+        _ <- append(key0, offset = 0, Nel.of(1, 2), mark = none)
+        state0 <- StateT.success { state => (state, cutoff(state, key0)) }
+        _ <- append(key0, offset = 1, Nel.of(3, 4), mark = "3".some)
+        state1 <- StateT.success { state => (state, cutoff(state, key0)) }
+        _ <- append(key0, offset = 2, Nel.of(5), mark = none)
+        state2 <- StateT.success { state => (state, cutoff(state, key0)) }
+        // a mark that is not a seqNr of the append is ignored by the replicator
+        _ <- append(key0, offset = 3, Nel.of(6), mark = "x".some)
+        _ <- append(key0, offset = 4, Nel.of(7), mark = "3".some)
+        state3 <- StateT.success { state => (state, cutoff(state, key0)) }
+        _ <- append(key0, offset = 5, Nel.of(8, 9), mark = "9".some)
+        state4 <- StateT.success { state => (state, cutoff(state, key0)) }
+        _ <- append(key1, offset = 6, Nel.of(1), mark = "1".some)
+        state5 <- StateT.success { state => (state, cutoff(state, key1)) }
+      } yield List(state0, state1, state2, state3, state4, state5)
+
+      val (state, cutoffs) = stateT.run(State.empty).get
+      cutoffs shouldEqual List(none, 3L.some, 3L.some, 3L.some, 9L.some, 1L.some)
+
+      state.actions.collect { case a: Action.UpdateSeqNrAndCutoff =>
+        (a.key, a.seqNr.value, a.cutoff.value)
+      } shouldEqual
+        List((key0, 9L, 9L), (key0, 4L, 3L))
+      state.actions.collect { case a: Action.InsertMetaJournal =>
+        (a.key, a.journalHead.cutoff.map(_.value))
+      } shouldEqual
+        List((key1, 1L.some), (key0, none))
+    }
+
     test(s"topics, $suffix") {
       val id = "id"
       val key = Key(id = id, topic = topic0)
@@ -2136,6 +2192,52 @@ object ReplicatedCassandraTest {
       }
   }
 
+  val updateSeqNrAndCutoffMetaJournal: MetaJournalStatements.UpdateSeqNrAndCutoff[StateT] = {
+    (
+      key,
+      segment,
+      partitionOffset,
+      timestamp,
+      seqNr,
+      cutoff,
+    ) =>
+      StateT.unit { state =>
+        state
+          .updateMetaJournal(key, segment) { entry =>
+            entry.copy(
+              journalHead =
+                entry.journalHead.copy(partitionOffset = partitionOffset, seqNr = seqNr, cutoff = cutoff.some),
+              updated = timestamp,
+            )
+          }
+          .append(Action.UpdateSeqNrAndCutoff(key, segment, partitionOffset, timestamp, seqNr, cutoff))
+      }
+  }
+
+  val updateExpiryAndCutoffMetaJournal: MetaJournalStatements.UpdateExpiryAndCutoff[StateT] = {
+    (
+      key,
+      segment,
+      partitionOffset,
+      timestamp,
+      seqNr,
+      expiry,
+      cutoff,
+    ) =>
+      StateT.unit { state =>
+        state
+          .updateMetaJournal(key, segment) { entry =>
+            entry.copy(
+              journalHead = entry
+                .journalHead
+                .copy(partitionOffset = partitionOffset, seqNr = seqNr, expiry = expiry.some, cutoff = cutoff.some),
+              updated = timestamp,
+            )
+          }
+          .append(Action.UpdateExpiryAndCutoff(key, segment, partitionOffset, timestamp, seqNr, expiry, cutoff))
+      }
+  }
+
   val updateDeleteToMetaJournal: MetaJournalStatements.UpdateDeleteTo[StateT] = {
     (
       key,
@@ -2266,6 +2368,8 @@ object ReplicatedCassandraTest {
       updateMetaJournal,
       updateSeqNrMetaJournal,
       updateExpiryMetaJournal,
+      updateSeqNrAndCutoffMetaJournal,
+      updateExpiryAndCutoffMetaJournal,
       updateDeleteToMetaJournal,
       updatePartitionOffsetMetaJournal,
       deleteMetaJournal,
@@ -2379,6 +2483,25 @@ object ReplicatedCassandraTest {
       segment: SegmentNr,
       partitionOffset: PartitionOffset,
       timestamp: Instant,
+    ) extends Action
+
+    final case class UpdateSeqNrAndCutoff(
+      key: Key,
+      segment: SegmentNr,
+      partitionOffset: PartitionOffset,
+      timestamp: Instant,
+      seqNr: SeqNr,
+      cutoff: SeqNr,
+    ) extends Action
+
+    final case class UpdateExpiryAndCutoff(
+      key: Key,
+      segment: SegmentNr,
+      partitionOffset: PartitionOffset,
+      timestamp: Instant,
+      seqNr: SeqNr,
+      expiry: Expiry,
+      cutoff: SeqNr,
     ) extends Action
 
     final case class DeleteMetaJournal(key: Key, segment: SegmentNr) extends Action

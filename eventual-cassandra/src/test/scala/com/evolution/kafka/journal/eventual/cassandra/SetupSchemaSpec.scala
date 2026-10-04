@@ -25,10 +25,10 @@ class SetupSchemaSpec extends AnyFunSuite with Matchers {
       .run(initial)
       .get
     state shouldEqual initial.copy(
-      version = "8".some,
+      version = "9".some,
       actions = List(
         Action.SyncEnd,
-        Action.SetSetting("schema-version", "8"),
+        Action.SetSetting("schema-version", "9"),
         Action.GetSetting("schema-version"),
         Action.SyncStart,
         Action.GetSetting("schema-version"),
@@ -42,9 +42,11 @@ class SetupSchemaSpec extends AnyFunSuite with Matchers {
       .run(initial)
       .get
     state shouldEqual initial.copy(
-      version = "8".some,
+      version = "9".some,
       actions = List(
         Action.SyncEnd,
+        Action.SetSetting("schema-version", "9"),
+        Action.Query("ALTER TABLE journal.metaJournal ADD cutoff BIGINT"),
         Action.SetSetting("schema-version", "8"),
         Action.Query("DROP TABLE IF EXISTS journal.pointer"),
         Action.SetSetting("schema-version", "7"),
@@ -84,9 +86,11 @@ class SetupSchemaSpec extends AnyFunSuite with Matchers {
       .run(initial)
       .get
     state shouldEqual initial.copy(
-      version = "8".some,
+      version = "9".some,
       actions = List(
         Action.SyncEnd,
+        Action.SetSetting("schema-version", "9"),
+        Action.Query("ALTER TABLE journal.metaJournal ADD cutoff BIGINT"),
         Action.SetSetting("schema-version", "8"),
         Action.Query("DROP TABLE IF EXISTS journal.pointer"),
         Action.SetSetting("schema-version", "7"),
@@ -112,7 +116,7 @@ class SetupSchemaSpec extends AnyFunSuite with Matchers {
   }
 
   test("do not apply any migration script when all migrations have been already applied before") {
-    val initial = State.empty.copy(version = "8".some)
+    val initial = State.empty.copy(version = "9".some)
     val (state, _) = migrate(fresh = false)
       .run(initial)
       .get

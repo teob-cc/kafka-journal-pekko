@@ -509,7 +509,12 @@ object EventualJournalSpec {
         journal.read(key, from).toList
       }
 
-      def pointer: F[Option[JournalPointer]] = journal.pointer(key)
+      // the position of the head only: deleteTo and the cutoff are checked where they are written
+      def pointer: F[Option[JournalPointer]] = {
+        journal
+          .pointer(key)
+          .map { _.map { pointer => JournalPointer(pointer.partitionOffset, pointer.seqNr) } }
+      }
 
       def offset(topic: Topic, partition: Partition): F[Option[Offset]] = {
         journal.offset(topic, partition)

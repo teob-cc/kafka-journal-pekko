@@ -492,6 +492,52 @@ object ReplicatedCassandraMetaJournalStatementsTest {
       }
   }
 
+  val updateSeqNrAndCutoffMetaJournal: MetaJournalStatements.UpdateSeqNrAndCutoff[StateT] = {
+    (
+      key,
+      segment,
+      partitionOffset,
+      timestamp,
+      seqNr,
+      cutoff,
+    ) =>
+      {
+        StateT.unit { state =>
+          state.updateMetaJournal(key, segment) { entry =>
+            entry.copy(
+              journalHead =
+                entry.journalHead.copy(partitionOffset = partitionOffset, seqNr = seqNr, cutoff = cutoff.some),
+              updated = timestamp,
+            )
+          }
+        }
+      }
+  }
+
+  val updateExpiryAndCutoffMetaJournal: MetaJournalStatements.UpdateExpiryAndCutoff[StateT] = {
+    (
+      key,
+      segment,
+      partitionOffset,
+      timestamp,
+      seqNr,
+      expiry,
+      cutoff,
+    ) =>
+      {
+        StateT.unit { state =>
+          state.updateMetaJournal(key, segment) { entry =>
+            entry.copy(
+              journalHead = entry
+                .journalHead
+                .copy(partitionOffset = partitionOffset, seqNr = seqNr, expiry = expiry.some, cutoff = cutoff.some),
+              updated = timestamp,
+            )
+          }
+        }
+      }
+  }
+
   val updateDeleteToMetaJournal: MetaJournalStatements.UpdateDeleteTo[StateT] = {
     (
       key,
@@ -566,6 +612,8 @@ object ReplicatedCassandraMetaJournalStatementsTest {
       updateMetaJournal,
       updateSeqNrMetaJournal,
       updateExpiryMetaJournal,
+      updateSeqNrAndCutoffMetaJournal,
+      updateExpiryAndCutoffMetaJournal,
       updateDeleteToMetaJournal,
       updateMetaJournalPartitionOffset,
       deleteMetaJournal,

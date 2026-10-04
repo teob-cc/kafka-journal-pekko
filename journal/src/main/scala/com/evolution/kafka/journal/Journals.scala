@@ -188,7 +188,10 @@ object Journals {
           )(implicit
             kafkaWrite: KafkaWrite[F, A],
           ): F[PartitionOffset] = {
-            appendEvents(key, events, metadata, headers)(using kafkaWriteWithMetrics)
+            for {
+              _ <- EpochMark.of(key, events.toList, headers).liftTo[F]
+              result <- appendEvents(key, events, metadata, headers)(using kafkaWriteWithMetrics)
+            } yield result
           }
 
           def read[A](
@@ -204,7 +207,7 @@ object Journals {
                 .mapM { _.traverse(eventualRead.apply) }
             }
 
-            def read(head: HeadInfo, stream: F[StreamActionRecords[F]]) = {
+            def read(head: HeadInfo, stream: F[StreamActionRecords[F]], from: SeqNr) = {
 
               def empty = Stream.empty[F, EventRecord[A]]
 
@@ -292,11 +295,38 @@ object Journals {
               }
             }
 
+            /*
+             * A replay starts at the latest cutoff of the replicated head, an epoch record, when it
+             * is above both `from` and `deleteTo`. A cutoff still in the Kafka tail is not known
+             * here: the replay then starts at the previous one and passes through it.
+             */
+            def replayFrom(head: HeadInfo): F[SeqNr] = {
+              head match {
+                case HeadInfo.Purge => from.pure[F]
+                case head =>
+                  val deleteToTail = head match {
+                    case a: HeadInfo.Append => a.deleteTo
+                    case a: HeadInfo.Delete => a.deleteTo.some
+                    case _ => none[DeleteTo]
+                  }
+                  eventual
+                    .pointer(key)
+                    .map { pointer =>
+                      val deleteTo = deleteToTail max pointer.flatMap { _.deleteTo }
+                      pointer
+                        .flatMap { _.cutoff }
+                        .filter { cutoff => cutoff > from && deleteTo.forall { _.value < cutoff } }
+                        .getOrElse(from)
+                    }
+              }
+            }
+
             for {
               headAndStream <- headAndStream(key, from).toStream
               (head, stream) = headAndStream
-              _ <- log.debug(s"$key read info: $head").toStream
-              eventRecord <- read(head, stream)
+              from <- replayFrom(head).toStream
+              _ <- log.debug(s"$key read info: $head, from: $from").toStream
+              eventRecord <- read(head, stream, from)
             } yield eventRecord
           }
 

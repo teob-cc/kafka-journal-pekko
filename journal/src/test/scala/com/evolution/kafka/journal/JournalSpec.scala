@@ -290,6 +290,108 @@ class JournalSpec extends AnyWordSpec with Matchers {
     }
   }
 
+  "Journal with epoch marks" should {
+
+    implicit val clock: Clock[StateT] = Clock.const[StateT](nanos = 0, millis = timestamp.toEpochMilli)
+    implicit val randomIdOf: RandomIdOf[StateT] = RandomIdOf.uuid[StateT]
+    implicit val measureDuration: MeasureDuration[StateT] = MeasureDuration.fromClock(clock)
+    implicit val fromTry: FromTry[StateT] = FromTry.lift[StateT]
+    implicit val fail: Fail[StateT] = Fail.lift[StateT]
+    implicit val fromAttempt: FromAttempt[StateT] = FromAttempt.lift[StateT]
+    implicit val fromJsResult: FromJsResult[StateT] = FromJsResult.lift[StateT]
+
+    // replicates every action but the last `behind`
+    def produceActionOf(behind: Int): ProduceAction[StateT] = { (action: Action) =>
+      StateT { state =>
+        val offset = Offset.unsafe(state.records.size)
+        val partitionOffset = PartitionOffset(partition = partition, offset = offset)
+        val record = ActionRecord(action, partitionOffset)
+        val records = state.records.enqueue(record)
+        val replicatedState = records
+          .dropRight(behind)
+          .foldLeft(EventualJournalOf.State.empty) { (state, record) => state(record) }
+        (state.copy(records = records, replicatedState = replicatedState), partitionOffset)
+      }
+    }
+
+    def journalOf(behind: Int): Journal[StateT] = {
+      val journals = Journals[StateT](
+        eventual = StateT.eventualJournal,
+        consumeActionRecords = StateT.consumeActionRecords,
+        produce = Produce(produceActionOf(behind), none),
+        headCache = StateT.headCache,
+        log = Log.empty[StateT],
+        conversionMetrics = none,
+      )
+      journals(JournalSpec.key)
+    }
+
+    def events(seqNrs: Int*) = Nel.fromListUnsafe(seqNrs.toList.map { seqNr => Event[Payload](SeqNr.unsafe(seqNr)) })
+
+    def epoch(seqNr: Int) = EpochMark.headers(SeqNr.unsafe(seqNr))
+
+    def run[A](stateT: StateT[A]) = stateT.run(State.empty).unsafeRunSync()._2
+
+    def appendAll(journal: Journal[StateT], marks: Boolean) = {
+      def mark(seqNr: Int) = if (marks) epoch(seqNr) else Headers.empty
+      for {
+        _ <- journal.append(events(1, 2))
+        _ <- journal.append(events(3), headers = mark(3))
+        _ <- journal.append(events(4))
+        _ <- journal.append(events(5, 6), headers = mark(5))
+        _ <- journal.append(events(7))
+      } yield {}
+    }
+
+    def seqNrsOf(journal: Journal[StateT], from: SeqNr) = journal.read[Payload](from).map { _.seqNr.value }.toList
+
+    for {
+      // a read appends a mark action of its own, which counts among the actions behind
+      (behind, expected) <- List(
+        (0, List(5, 6, 7)),
+        (2, List(5, 6, 7)),
+        // the newer cutoff is still in the Kafka tail: the replay starts at the previous one
+        (3, List(3, 4, 5, 6, 7)),
+        (4, List(3, 4, 5, 6, 7)),
+        // no cutoff is replicated yet
+        (5, List(1, 2, 3, 4, 5, 6, 7)),
+        (6, List(1, 2, 3, 4, 5, 6, 7)),
+      )
+    } {
+      s"start a replay at the latest replicated cutoff, $behind actions behind" in {
+        val journal = journalOf(behind)
+        val result = for {
+          _ <- appendAll(journal, marks = true)
+          from1 <- seqNrsOf(journal, SeqNr.min)
+          from6 <- seqNrsOf(journal, SeqNr.unsafe(6))
+          pointer <- journal.pointer
+        } yield (from1, from6, pointer)
+        run(result) shouldEqual ((expected, List(6, 7), SeqNr.unsafe(7).some))
+      }
+
+      s"replay from seq 1 without epoch marks, $behind actions behind" in {
+        val journal = journalOf(behind)
+        val result = for {
+          _ <- appendAll(journal, marks = false)
+          from1 <- seqNrsOf(journal, SeqNr.min)
+        } yield from1
+        run(result) shouldEqual List(1, 2, 3, 4, 5, 6, 7)
+      }
+    }
+
+    "refuse an append whose epoch mark names no event of it" in {
+      val journal = journalOf(0)
+      val result = for {
+        a <- journal.append(events(1, 2), headers = epoch(3)).attempt
+        b <- journal.append(events(1, 2), headers = Headers((EpochMark.header, "x"))).attempt
+        pointer <- journal.pointer
+      } yield (a.left.map(_.getClass), b.left.map(_.getClass), pointer)
+      run(result) shouldEqual (
+        (Left(classOf[InvalidEpochMarkError]), Left(classOf[InvalidEpochMarkError]), none[SeqNr])
+      )
+    }
+  }
+
   "Journal" when {
 
     for {
@@ -613,7 +715,7 @@ object JournalSpec {
             offset <- state.replicatedState.offset
           } yield {
             val partitionOffset = PartitionOffset(partition, offset)
-            JournalPointer(partitionOffset, seqNr)
+            JournalPointer(partitionOffset, seqNr, state.replicatedState.deleteTo, state.replicatedState.cutoff)
           }
 
           (state, pointer)
@@ -690,6 +792,7 @@ object JournalSpec {
       events: Queue[EventRecord[EventualPayloadAndType]] = Queue.empty,
       deleteTo: Option[DeleteTo] = None,
       offset: Option[Offset] = None,
+      cutoff: Option[SeqNr] = None,
     ) {
 
       def apply(record: ActionRecord[Action]): State = {
@@ -715,7 +818,11 @@ object JournalSpec {
             val partitionOffset = PartitionOffset(partition, record.offset)
             EventRecord(action, event.map(eventualWrite(_).get), partitionOffset, events1.metadata)
           }
-          copy(events = events.enqueueAll(batch.toList), offset = offset.some)
+          val cutoff1 = EpochMark(action.headers)
+            .toOption
+            .flatten
+            .filter { seqNr => events1.events.exists { _.seqNr == seqNr } }
+          copy(events = events.enqueueAll(batch.toList), offset = offset.some, cutoff = cutoff max cutoff1)
         }
 
         def onDelete(action: Action.Delete) = {
@@ -734,7 +841,7 @@ object JournalSpec {
           events
             .lastOption
             .fold(updateOffset) { _ =>
-              copy(events = Queue.empty, deleteTo = None, offset = offset.some)
+              copy(events = Queue.empty, deleteTo = None, offset = offset.some, cutoff = None)
             }
         }
 

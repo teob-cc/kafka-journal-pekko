@@ -60,7 +60,9 @@ object EventualCassandraSpec {
         val pointer = state
           .metaJournal
           .get(key)
-          .map { metadata => JournalPointer(metadata.partitionOffset, metadata.seqNr) }
+          .map { metadata =>
+            JournalPointer(metadata.partitionOffset, metadata.seqNr, metadata.deleteTo, metadata.cutoff)
+          }
         (state, pointer)
       }
     }
@@ -281,6 +283,54 @@ object EventualCassandraSpec {
         }
     }
 
+    val updateMetaJournalSeqNrAndCutoff: MetaJournalStatements.UpdateSeqNrAndCutoff[StateT] = {
+      (
+        key,
+        _,
+        partitionOffset,
+        _,
+        seqNr,
+        cutoff,
+      ) =>
+        {
+          StateT { state =>
+            val metaJournal = state.metaJournal
+            val state1 = for {
+              entry <- metaJournal.get(key)
+            } yield {
+              val entry1 = entry.copy(partitionOffset = partitionOffset, seqNr = seqNr, cutoff = cutoff.some)
+              state.copy(metaJournal = metaJournal.updated(key, entry1))
+            }
+            (state1 getOrElse state, ())
+          }
+        }
+    }
+
+    val updateMetaJournalExpiryAndCutoff: MetaJournalStatements.UpdateExpiryAndCutoff[StateT] = {
+      (
+        key,
+        _,
+        partitionOffset,
+        _,
+        seqNr,
+        expiry,
+        cutoff,
+      ) =>
+        {
+          StateT { state =>
+            val metaJournal = state.metaJournal
+            val state1 = for {
+              entry <- metaJournal.get(key)
+            } yield {
+              val entry1 = entry
+                .copy(partitionOffset = partitionOffset, seqNr = seqNr, expiry = expiry.some, cutoff = cutoff.some)
+              state.copy(metaJournal = metaJournal.updated(key, entry1))
+            }
+            (state1 getOrElse state, ())
+          }
+        }
+    }
+
     val updateMetaJournalDeleteTo: MetaJournalStatements.UpdateDeleteTo[StateT] = {
       (
         key,
@@ -407,6 +457,8 @@ object EventualCassandraSpec {
       updateMetaJournal,
       updateMetaJournalSeqNr,
       updateMetaJournalExpiry,
+      updateMetaJournalSeqNrAndCutoff,
+      updateMetaJournalExpiryAndCutoff,
       updateMetaJournalDeleteTo,
       updateMetaJournalPartitionOffset,
       deleteMetaJournal,

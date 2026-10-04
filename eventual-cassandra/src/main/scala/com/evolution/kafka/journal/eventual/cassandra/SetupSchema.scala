@@ -64,6 +64,9 @@ private[journal] object SetupSchema {
     def dropTablePointerFixed =
       s"DROP TABLE IF EXISTS ${ TableName(schema.keyspaceName, table = "pointer").toCql }"
 
+    def metaJournalAddColumnCutoff: String =
+      MetaJournalStatements.addCutoff(schema.metaJournal)
+
     Nel.of(
       journalAddColumnHeaders,
       journalAddColumnVersion,
@@ -74,6 +77,7 @@ private[journal] object SetupSchema {
       dropTablePointer,
       dropTableMetadataFixed,
       dropTablePointerFixed,
+      metaJournalAddColumnCutoff,
     )
 
   }

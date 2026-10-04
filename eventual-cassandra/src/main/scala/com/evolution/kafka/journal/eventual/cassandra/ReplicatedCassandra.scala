@@ -182,6 +182,21 @@ private[journal] object ReplicatedCassandra {
                           loop(events1, None, ().pure[F])
                         }
 
+                        /*
+                         * The latest epoch record of the append: an event whose epoch mark names its
+                         * own seqNr. A mark that is not a seqNr is ignored here: the journal refuses
+                         * such an append, and the replicator must not stop on it.
+                         */
+                        val cutoff = events
+                          .toList
+                          .flatMap { event =>
+                            EpochMark(event.headers)
+                              .toOption
+                              .flatten
+                              .filter { _ == event.seqNr }
+                          }
+                          .maxOption
+
                         def appendAndSave(journalHead: Option[JournalHead]) = {
 
                           def appendAndSave = {
@@ -210,6 +225,7 @@ private[journal] object ReplicatedCassandra {
                                       deleteTo = deleteTo,
                                       expiry = expiry,
                                       recordId = recordId.some,
+                                      cutoff = cutoff,
                                     )
                                     val origin = events.head.origin
                                     val insert = metaJournal.insert(timestamp, journalHead, origin)
@@ -218,19 +234,29 @@ private[journal] object ReplicatedCassandra {
                             } { journalHead =>
                               def updateOf: ByKey.Update[F] = metaJournal.update(partitionOffset, timestamp)
 
+                              // the latest cutoff is written in the same statement as the head
+                              val cutoff1 = cutoff.filter { cutoff => journalHead.cutoff.forall { _ < cutoff } }
+
+                              def updateSeqNr = cutoff1.fold { updateOf(seqNrLast) } { updateOf(seqNrLast, _) }
+
                               expiryService
                                 .action(journalHead.expiry, expireAfter, timestamp)
                                 .map { action =>
                                   val (expiry, update) = action match {
                                     case ExpiryService.Action.Update(expiry) =>
-                                      (expiry.some, updateOf(seqNrLast, expiry))
+                                      val update = cutoff1.fold {
+                                        updateOf(seqNrLast, expiry)
+                                      } { cutoff =>
+                                        updateOf(seqNrLast, expiry, cutoff)
+                                      }
+                                      (expiry.some, update)
 
                                     case ExpiryService.Action.Ignore =>
-                                      (journalHead.expiry, updateOf(seqNrLast))
+                                      (journalHead.expiry, updateSeqNr)
 
                                     case ExpiryService.Action.Remove =>
                                       val update = for {
-                                        _ <- updateOf(seqNrLast)
+                                        _ <- updateSeqNr
                                         _ <- metaJournal.deleteExpiry
                                       } yield {}
                                       (none[Expiry], update)
@@ -240,6 +266,7 @@ private[journal] object ReplicatedCassandra {
                                       partitionOffset = partitionOffset,
                                       seqNr = seqNrLast,
                                       expiry = expiry,
+                                      cutoff = cutoff1 orElse journalHead.cutoff,
                                     )
                                   (update, journalHead1)
                                 }
@@ -502,6 +529,10 @@ private[journal] object ReplicatedCassandra {
         update <- cassandra.MetaJournalStatements.Update.of[F](metaJournal, consistencyConfig.write)
         updateSeqNr <- cassandra.MetaJournalStatements.UpdateSeqNr.of[F](metaJournal, consistencyConfig.write)
         updateExpiry <- cassandra.MetaJournalStatements.UpdateExpiry.of[F](metaJournal, consistencyConfig.write)
+        updateSeqNrAndCutoff <-
+          cassandra.MetaJournalStatements.UpdateSeqNrAndCutoff.of[F](metaJournal, consistencyConfig.write)
+        updateExpiryAndCutoff <-
+          cassandra.MetaJournalStatements.UpdateExpiryAndCutoff.of[F](metaJournal, consistencyConfig.write)
         updateDeleteTo <- cassandra.MetaJournalStatements.UpdateDeleteTo.of[F](metaJournal, consistencyConfig.write)
         updatePartitionOffset <-
           cassandra.MetaJournalStatements.UpdatePartitionOffset.of[F](metaJournal, consistencyConfig.write)
@@ -514,6 +545,8 @@ private[journal] object ReplicatedCassandra {
           update,
           updateSeqNr,
           updateExpiry,
+          updateSeqNrAndCutoff,
+          updateExpiryAndCutoff,
           updateDeleteTo,
           updatePartitionOffset,
           delete,
@@ -530,6 +563,8 @@ private[journal] object ReplicatedCassandra {
       update: cassandra.MetaJournalStatements.Update[F],
       updateSeqNr: cassandra.MetaJournalStatements.UpdateSeqNr[F],
       updateExpiry: cassandra.MetaJournalStatements.UpdateExpiry[F],
+      updateSeqNrAndCutoff: cassandra.MetaJournalStatements.UpdateSeqNrAndCutoff[F],
+      updateExpiryAndCutoff: cassandra.MetaJournalStatements.UpdateExpiryAndCutoff[F],
       updateDeleteTo: cassandra.MetaJournalStatements.UpdateDeleteTo[F],
       updatePartitionOffset: cassandra.MetaJournalStatements.UpdatePartitionOffset[F],
       delete: cassandra.MetaJournalStatements.Delete[F],
@@ -574,6 +609,14 @@ private[journal] object ReplicatedCassandra {
                 def apply(seqNr: SeqNr, deleteTo: DeleteTo): F[Unit] = {
                   update1(key, segment, partitionOffset, timestamp, seqNr, deleteTo)
                 }
+
+                def apply(seqNr: SeqNr, cutoff: SeqNr): F[Unit] = {
+                  updateSeqNrAndCutoff(key, segment, partitionOffset, timestamp, seqNr, cutoff)
+                }
+
+                def apply(seqNr: SeqNr, expiry: Expiry, cutoff: SeqNr): F[Unit] = {
+                  updateExpiryAndCutoff(key, segment, partitionOffset, timestamp, seqNr, expiry, cutoff)
+                }
               }
             }
 
@@ -611,6 +654,16 @@ private[journal] object ReplicatedCassandra {
         def apply(deleteTo: DeleteTo): F[Unit]
 
         def apply(seqNr: SeqNr, deleteTo: DeleteTo): F[Unit]
+
+        /**
+         * Updates the head and the latest cutoff in one statement
+         */
+        def apply(seqNr: SeqNr, cutoff: SeqNr): F[Unit]
+
+        /**
+         * Updates the head, its expiry and the latest cutoff in one statement
+         */
+        def apply(seqNr: SeqNr, expiry: Expiry, cutoff: SeqNr): F[Unit]
       }
     }
   }
