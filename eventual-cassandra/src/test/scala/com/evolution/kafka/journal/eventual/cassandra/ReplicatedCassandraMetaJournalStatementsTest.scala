@@ -605,6 +605,52 @@ object ReplicatedCassandraMetaJournalStatementsTest {
     }
   }
 
+  val updatePurgedMetaJournal: MetaJournalStatements.UpdatePurged[StateT] = {
+    (
+      key,
+      segment,
+      partitionOffset,
+      timestamp,
+      seqNr,
+    ) =>
+      {
+        StateT.unit { state =>
+          state.updateMetaJournal(key, segment) { entry =>
+            entry.copy(
+              journalHead = entry
+                .journalHead
+                .copy(
+                  partitionOffset = partitionOffset,
+                  seqNr = seqNr,
+                  deleteTo = seqNr.toDeleteTo.some,
+                  purgedTo = seqNr.some,
+                  cutoff = none,
+                  expiry = none,
+                ),
+              updated = timestamp,
+            )
+          }
+        }
+      }
+  }
+
+  val updateIncarnationMetaJournal: MetaJournalStatements.UpdateIncarnation[StateT] = {
+    (
+      key,
+      segment,
+      timestamp,
+      journalHead,
+      origin,
+    ) =>
+      {
+        StateT.unit { state =>
+          state.updateMetaJournal(key, segment) { entry =>
+            entry.copy(journalHead = journalHead, updated = timestamp, origin = origin)
+          }
+        }
+      }
+  }
+
   val metaJournalStatements: ReplicatedCassandra.MetaJournalStatements[StateT] =
     ReplicatedCassandra.MetaJournalStatements(
       selectMetaJournal,
@@ -618,6 +664,8 @@ object ReplicatedCassandraMetaJournalStatementsTest {
       updateMetaJournalPartitionOffset,
       deleteMetaJournal,
       deleteExpiryMetaJournal,
+      updatePurgedMetaJournal,
+      updateIncarnationMetaJournal,
     )
 
   val byKey: ByKey[StateT] = metaJournalStatements(key, segment)

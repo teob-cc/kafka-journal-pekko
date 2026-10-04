@@ -52,6 +52,29 @@ class ReplicatedCassandraTest extends AnyFunSuite with Matchers {
     JournalRecord(event, recordId.some)
   }
 
+  // the head a purge keeps: everything up to `seqNr` is deleted and belongs to a purged incarnation
+  private def tombstoneOf(
+    key: Key,
+    segment: SegmentNr,
+    segmentSize: SegmentSize,
+    offset: Long,
+    seqNr: Long,
+    updated: Instant,
+    recordId: Option[RecordId] = none,
+  ) = {
+    val journalHead = JournalHead(
+      partitionOffset = PartitionOffset(Partition.min, Offset.unsafe(offset)),
+      segmentSize = segmentSize,
+      seqNr = SeqNr.unsafe(seqNr),
+      deleteTo = SeqNr.unsafe(seqNr).toDeleteTo.some,
+      recordId = recordId,
+      purgedTo = SeqNr.unsafe(seqNr).some,
+    )
+    val entry =
+      MetaJournalEntry(journalHead = journalHead, created = timestamp0, updated = updated, origin = origin.some)
+    Map(((key.topic, segment), Map((key.id, entry))))
+  }
+
   for {
     segmentSize <- List(SegmentSize.min, SegmentSize.default, SegmentSize.max)
     segments <- List((Segments.min, Segments.old), (Segments.old, Segments.default))
@@ -1246,8 +1269,15 @@ class ReplicatedCassandraTest extends AnyFunSuite with Matchers {
 
       val actual = stateT.run(State.empty)
       val expected = State(
+        metaJournal = tombstoneOf(key, segment, segmentSize, 4, 2, timestamp1, recordId.some),
         actions = List(
-          Action.DeleteMetaJournal(key, segment),
+          Action.UpdatePurged(
+            key,
+            segment,
+            PartitionOffset(Partition.min, Offset.unsafe(4)),
+            timestamp1,
+            SeqNr.unsafe(2),
+          ),
           Action.DeleteRecords(key, SegmentNr.journal(SeqNr.unsafe(2), segmentSize).next[Id]),
           Action.DeleteRecords(key, SegmentNr.journal(SeqNr.unsafe(1), segmentSize)),
           Action.UpdateDeleteTo(
@@ -1313,8 +1343,9 @@ class ReplicatedCassandraTest extends AnyFunSuite with Matchers {
       } yield {}
 
       val expected = State(
+        metaJournal = tombstoneOf(key, segment, segmentSize, 2, 2, timestamp0),
         actions = List(
-          Action.DeleteMetaJournal(key, segment),
+          Action.UpdatePurged(key, segment, headPartitionOffset, timestamp0, SeqNr.unsafe(2)),
           Action.DeleteRecords(key, SegmentNr.journal(SeqNr.unsafe(2), segmentSize).next[Id]),
           Action.DeleteRecords(key, SegmentNr.journal(SeqNr.unsafe(2), segmentSize)),
           Action.UpdateDeleteTo(key, segment, headPartitionOffset, timestamp0, SeqNr.unsafe(2).toDeleteTo),
@@ -1322,6 +1353,64 @@ class ReplicatedCassandraTest extends AnyFunSuite with Matchers {
       )
       val result = stateT.run(initial)
       result shouldEqual (expected, ()).pure[Try]
+    }
+
+    test(s"continue a purged journal above its tombstone, with a new record id, $suffix") {
+      val key = Key(id = "id", topic = topic0)
+      val segment = segmentOfId.metaJournal(key)
+      val recordIdPurged = RecordId(UUID.fromString("42424242-4242-4242-9242-424242424242"))
+      val initial = State(metaJournal = tombstoneOf(key, segment, segmentSize, 4, 2, timestamp0, recordIdPurged.some))
+
+      def append(offset: Long, seqNrs: Nel[Long]) = {
+        journal.append(
+          key = key,
+          Partition.min,
+          Offset.unsafe(offset),
+          timestamp = timestamp1,
+          expireAfter = none,
+          events = seqNrs.map { seqNr =>
+            eventRecordOf(SeqNr.unsafe(seqNr), PartitionOffset(Partition.min, Offset.unsafe(offset))).event
+          },
+        )
+      }
+
+      val stateT = for {
+        // an append the purge already removed is not replicated again
+        a <- append(3, Nel.of(1L, 2L))
+        b <- append(5, Nel.of(3L, 4L))
+      } yield (a, b)
+
+      val (state, result) = stateT.run(initial).get
+      result shouldEqual ((false, true))
+      val journalHead = JournalHead(
+        partitionOffset = PartitionOffset(Partition.min, Offset.unsafe(5)),
+        segmentSize = segmentSize,
+        seqNr = SeqNr.unsafe(4),
+        deleteTo = SeqNr.unsafe(2).toDeleteTo.some,
+        recordId = recordId.some,
+        purgedTo = SeqNr.unsafe(2).some,
+      )
+      state.actions.collect { case a: Action.UpdateIncarnation => a.journalHead } shouldEqual List(journalHead)
+      state.metaJournal.get((topic0, segment)).flatMap(_.get(key.id)).map(_.journalHead) shouldEqual journalHead.some
+      journalHead.purged shouldEqual false
+    }
+
+    test(s"keep the purged floor when an append starts below the tombstone, $suffix") {
+      val key = Key(id = "id", topic = topic0)
+      val segment = segmentOfId.metaJournal(key)
+      val initial = State(metaJournal = tombstoneOf(key, segment, segmentSize, 4, 2, timestamp0))
+      val stateT = journal.append(
+        key = key,
+        Partition.min,
+        Offset.unsafe(5),
+        timestamp = timestamp1,
+        expireAfter = none,
+        events = Nel.of(eventRecordOf(SeqNr.unsafe(2), PartitionOffset(Partition.min, Offset.unsafe(5))).event),
+      )
+      val (state, _) = stateT.run(initial).get
+      state.metaJournal.get((topic0, segment)).flatMap(_.get(key.id)).map { entry =>
+        (entry.journalHead.seqNr, entry.journalHead.deleteTo, entry.journalHead.purgedTo)
+      } shouldEqual (SeqNr.unsafe(2), SeqNr.min.toDeleteTo.some, SeqNr.min.some).some
     }
 
     test(s"ignore purge, when there is no matching head entry in `metajournal` table, $suffix") {
@@ -1370,8 +1459,9 @@ class ReplicatedCassandraTest extends AnyFunSuite with Matchers {
         val stateT = journal.purge(key, partitionOffset.partition, offset, timestamp1)
 
         val expected = State(
+          metaJournal = tombstoneOf(key, segment, segmentSize, 2, baseSeqNr.toLong, timestamp1),
           actions = List(
-            Action.DeleteMetaJournal(key, segment),
+            Action.UpdatePurged(key, segment, headPartitionOffset, timestamp1, SeqNr.unsafe(baseSeqNr)),
           ) ++ {
             for {
               i <- segments to (0, -1)
@@ -1423,8 +1513,9 @@ class ReplicatedCassandraTest extends AnyFunSuite with Matchers {
         val stateT = journal.purge(key, partitionOffset.partition, offset, timestamp1)
 
         val expected = State(
+          metaJournal = tombstoneOf(key, segment, segmentSize, 2, baseSeqNr.toLong + 1, timestamp1),
           actions = List(
-            Action.DeleteMetaJournal(key, segment),
+            Action.UpdatePurged(key, segment, headPartitionOffset, timestamp1, SeqNr.unsafe(baseSeqNr + 1)),
             Action.DeleteRecords(key, SegmentNr.journal(SeqNr.unsafe(baseSeqNr), segmentSize).next[Id]),
             Action.DeleteRecords(key, SegmentNr.journal(SeqNr.unsafe(baseSeqNr), segmentSize)),
             Action.DeleteRecords(key, SegmentNr.journal(SeqNr.unsafe(baseSeqNr), segmentSize).prev[Id]),
@@ -1473,8 +1564,15 @@ class ReplicatedCassandraTest extends AnyFunSuite with Matchers {
         val actual = stateT.run(initial)
 
         val expected = State(
+          metaJournal = tombstoneOf(key, segment, segmentSize, 5, baseSeqNr.toLong, timestamp1),
           actions = List(
-            Action.DeleteMetaJournal(key, segment),
+            Action.UpdatePurged(
+              key,
+              segment,
+              PartitionOffset(Partition.min, Offset.unsafe(5)),
+              timestamp1,
+              SeqNr.unsafe(baseSeqNr),
+            ),
             // deletes records from previous, this and next segments
             Action.DeleteRecords(key, SegmentNr.journal(SeqNr.unsafe(baseSeqNr), segmentSize).next[Id]),
             Action.DeleteRecords(key, SegmentNr.journal(SeqNr.unsafe(baseSeqNr), segmentSize)),
@@ -2305,6 +2403,52 @@ object ReplicatedCassandraTest {
     }
   }
 
+  val updatePurgedMetaJournal: MetaJournalStatements.UpdatePurged[StateT] = {
+    (
+      key,
+      segment,
+      partitionOffset,
+      timestamp,
+      seqNr,
+    ) =>
+      StateT.unit { state =>
+        state
+          .updateMetaJournal(key, segment) { entry =>
+            entry.copy(
+              journalHead = entry
+                .journalHead
+                .copy(
+                  partitionOffset = partitionOffset,
+                  seqNr = seqNr,
+                  deleteTo = seqNr.toDeleteTo.some,
+                  purgedTo = seqNr.some,
+                  cutoff = none,
+                  expiry = none,
+                ),
+              updated = timestamp,
+            )
+          }
+          .append(Action.UpdatePurged(key, segment, partitionOffset, timestamp, seqNr))
+      }
+  }
+
+  val updateIncarnationMetaJournal: MetaJournalStatements.UpdateIncarnation[StateT] = {
+    (
+      key,
+      segment,
+      timestamp,
+      journalHead,
+      origin,
+    ) =>
+      StateT.unit { state =>
+        state
+          .updateMetaJournal(key, segment) { entry =>
+            entry.copy(journalHead = journalHead, updated = timestamp, origin = origin)
+          }
+          .append(Action.UpdateIncarnation(key, segment, timestamp, journalHead, origin))
+      }
+  }
+
   val selectOffset2: Pointer2Statements.SelectOffset[StateT] = { (topic: Topic, partition: Partition) =>
     StateT.success { state =>
       val offset = for {
@@ -2374,6 +2518,8 @@ object ReplicatedCassandraTest {
       updatePartitionOffsetMetaJournal,
       deleteMetaJournal,
       deleteExpiryMetaJournal,
+      updatePurgedMetaJournal,
+      updateIncarnationMetaJournal,
     )
 
     ReplicatedCassandra.Statements(
@@ -2502,6 +2648,22 @@ object ReplicatedCassandraTest {
       seqNr: SeqNr,
       expiry: Expiry,
       cutoff: SeqNr,
+    ) extends Action
+
+    final case class UpdatePurged(
+      key: Key,
+      segment: SegmentNr,
+      partitionOffset: PartitionOffset,
+      timestamp: Instant,
+      seqNr: SeqNr,
+    ) extends Action
+
+    final case class UpdateIncarnation(
+      key: Key,
+      segment: SegmentNr,
+      timestamp: Instant,
+      journalHead: JournalHead,
+      origin: Option[Origin],
     ) extends Action
 
     final case class DeleteMetaJournal(key: Key, segment: SegmentNr) extends Action

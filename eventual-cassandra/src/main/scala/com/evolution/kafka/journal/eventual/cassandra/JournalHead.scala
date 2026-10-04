@@ -35,6 +35,9 @@ import com.evolution.scassandra4.{DecodeRow, EncodeRow}
  * @param cutoff
  *   the latest cutoff: the [[SeqNr]] of the latest replicated epoch record, see
  *   [[com.evolution.kafka.journal.EpochMark]]
+ * @param purgedTo
+ *   the last [[SeqNr]] of the purged incarnations of the journal: a purge keeps the head as a
+ *   tombstone, at or above this [[SeqNr]], and the next incarnation continues above it
  */
 private[journal] final case class JournalHead(
   partitionOffset: PartitionOffset,
@@ -44,7 +47,14 @@ private[journal] final case class JournalHead(
   expiry: Option[Expiry] = none,
   recordId: Option[RecordId] = none,
   cutoff: Option[SeqNr] = none,
-)
+  purgedTo: Option[SeqNr] = none,
+) {
+
+  /**
+   * The journal was purged and nothing was appended since: the head is a tombstone
+   */
+  def purged: Boolean = purgedTo.exists { _ >= seqNr }
+}
 
 private[journal] object JournalHead {
 
@@ -62,6 +72,7 @@ private[journal] object JournalHead {
           expiry = row.decode[Option[Expiry]],
           recordId = row.decode[Option[RecordId]]("record_id"),
           cutoff = row.decode[Option[SeqNr]]("cutoff"),
+          purgedTo = row.decode[Option[SeqNr]]("purged_to"),
         )
       }
   }
@@ -80,6 +91,7 @@ private[journal] object JournalHead {
           .encode(value.expiry)
           .encodeSome("record_id", value.recordId)
           .encodeSome("cutoff", value.cutoff)
+          .encodeSome("purged_to", value.purgedTo)
       }
     }
   }

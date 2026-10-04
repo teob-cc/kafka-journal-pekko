@@ -202,12 +202,21 @@ private[journal] object ReplicatedCassandra {
                           def appendAndSave = {
                             val seqNrLast = events.last.seqNr
 
-                            val saveAndJournalHead = journalHead.fold {
-                              val deleteTo = events
-                                .head
-                                .seqNr
+                            /*
+                             * A new journal, or a new incarnation of a purged one. The incarnation
+                             * continues above the head its tombstone kept, with a new record id.
+                             */
+                            def insert(tombstone: Option[JournalHead]) = {
+                              val seqNrFirst = events.head.seqNr
+                              val deleteTo = seqNrFirst
                                 .prev[Option]
                                 .map { _.toDeleteTo }
+
+                              val purgedTo = tombstone.flatMap { tombstone =>
+                                // a writer that did not see the tombstone starts below it
+                                if (seqNrFirst > tombstone.seqNr) tombstone.seqNr.some
+                                else seqNrFirst.prev[Option]
+                              }
 
                               expireAfter
                                 .traverse { expireAfter =>
@@ -226,12 +235,19 @@ private[journal] object ReplicatedCassandra {
                                       expiry = expiry,
                                       recordId = recordId.some,
                                       cutoff = cutoff,
+                                      purgedTo = purgedTo,
                                     )
                                     val origin = events.head.origin
-                                    val insert = metaJournal.insert(timestamp, journalHead, origin)
+                                    val insert = tombstone.fold {
+                                      metaJournal.insert(timestamp, journalHead, origin)
+                                    } { _ =>
+                                      metaJournal.incarnate(timestamp, journalHead, origin)
+                                    }
                                     (insert, journalHead)
                                 }
-                            } { journalHead =>
+                            }
+
+                            def update(journalHead: JournalHead) = {
                               def updateOf: ByKey.Update[F] = metaJournal.update(partitionOffset, timestamp)
 
                               // the latest cutoff is written in the same statement as the head
@@ -270,6 +286,11 @@ private[journal] object ReplicatedCassandra {
                                     )
                                   (update, journalHead1)
                                 }
+                            }
+
+                            val saveAndJournalHead = journalHead match {
+                              case Some(journalHead) if !journalHead.purged => update(journalHead)
+                              case journalHead => insert(journalHead)
                             }
 
                             val offset = journalHead.map { _.partitionOffset.offset }
@@ -421,7 +442,9 @@ private[journal] object ReplicatedCassandra {
                           result <- journalHead.fold {
                             false.pure[F]
                           } { journalHead =>
-                            if (offset >= journalHead.partitionOffset.offset) {
+                            if (journalHead.purged) {
+                              false.pure[F]
+                            } else if (offset >= journalHead.partitionOffset.offset) {
                               val segmentSize = journalHead.segmentSize
                               val seqNr = journalHead.seqNr
                               val update = metaJournal.update(journalHead.partitionOffset, timestamp)
@@ -481,8 +504,17 @@ private[journal] object ReplicatedCassandra {
                                     .deleteRecords(key, segmentNr)
                                     .uncancelable
                                 }
-                                _ <- metaJournal.delete
-                                _ <- journalHeadRef.set(none)
+                                // the head stays as a tombstone, so the id is never reborn at seq 1
+                                tombstone = journalHead.copy(
+                                  partitionOffset = PartitionOffset(partition, offset),
+                                  seqNr = to,
+                                  deleteTo = to.toDeleteTo.some,
+                                  expiry = none,
+                                  cutoff = none,
+                                  purgedTo = to.some,
+                                )
+                                _ <- metaJournal.purged(tombstone.partitionOffset, timestamp, to)
+                                _ <- journalHeadRef.set(tombstone.some)
                               } yield true
                               result.uncancelable
                             } else {
@@ -533,6 +565,9 @@ private[journal] object ReplicatedCassandra {
           cassandra.MetaJournalStatements.UpdateSeqNrAndCutoff.of[F](metaJournal, consistencyConfig.write)
         updateExpiryAndCutoff <-
           cassandra.MetaJournalStatements.UpdateExpiryAndCutoff.of[F](metaJournal, consistencyConfig.write)
+        updatePurged <- cassandra.MetaJournalStatements.UpdatePurged.of[F](metaJournal, consistencyConfig.write)
+        updateIncarnation <-
+          cassandra.MetaJournalStatements.UpdateIncarnation.of[F](metaJournal, consistencyConfig.write)
         updateDeleteTo <- cassandra.MetaJournalStatements.UpdateDeleteTo.of[F](metaJournal, consistencyConfig.write)
         updatePartitionOffset <-
           cassandra.MetaJournalStatements.UpdatePartitionOffset.of[F](metaJournal, consistencyConfig.write)
@@ -551,6 +586,8 @@ private[journal] object ReplicatedCassandra {
           updatePartitionOffset,
           delete,
           deleteExpiry,
+          updatePurged,
+          updateIncarnation,
         )
       }
     }
@@ -569,6 +606,8 @@ private[journal] object ReplicatedCassandra {
       updatePartitionOffset: cassandra.MetaJournalStatements.UpdatePartitionOffset[F],
       delete: cassandra.MetaJournalStatements.Delete[F],
       deleteExpiry: cassandra.MetaJournalStatements.DeleteExpiry[F],
+      updatePurged: cassandra.MetaJournalStatements.UpdatePurged[F],
+      updateIncarnation: cassandra.MetaJournalStatements.UpdateIncarnation[F],
     ): MetaJournalStatements[F] = {
 
       val inset1 = insert
@@ -623,6 +662,14 @@ private[journal] object ReplicatedCassandra {
             def delete: F[Unit] = delete1(key, segment)
 
             def deleteExpiry: F[Unit] = deleteExpiry1(key, segment)
+
+            def purged(partitionOffset: PartitionOffset, timestamp: Instant, seqNr: SeqNr): F[Unit] = {
+              updatePurged(key, segment, partitionOffset, timestamp, seqNr)
+            }
+
+            def incarnate(timestamp: Instant, journalHead: JournalHead, origin: Option[Origin]): F[Unit] = {
+              updateIncarnation(key, segment, timestamp, journalHead, origin)
+            }
           }
         }
       }
@@ -640,6 +687,16 @@ private[journal] object ReplicatedCassandra {
       def delete: F[Unit]
 
       def deleteExpiry: F[Unit]
+
+      /**
+       * Turns the head into a tombstone at `seqNr`: see [[JournalHead.purgedTo]]
+       */
+      def purged(partitionOffset: PartitionOffset, timestamp: Instant, seqNr: SeqNr): F[Unit]
+
+      /**
+       * Writes the head of a new incarnation over a tombstone
+       */
+      def incarnate(timestamp: Instant, journalHead: JournalHead, origin: Option[Origin]): F[Unit]
     }
 
     object ByKey {

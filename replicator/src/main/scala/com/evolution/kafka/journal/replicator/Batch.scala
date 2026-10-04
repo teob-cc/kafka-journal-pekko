@@ -11,7 +11,8 @@ import com.evolutiongaming.skafka.Offset
  *   - two or more `append` or `delete` actions are merged into one
  *   - optimizes list of records to minimize load on Cassandra, like:
  *     - aggregate effective actions by processing them from the _youngest_ record down to oldest
- *     - ignore/drop all actions, which are before last `Purge`
+ *     - ignore/drop all actions, which are before last `Purge`, except the youngest `append`: the
+ *       purge keeps a tombstone at the head seqNr of the journal, so the head must be known
  *     - ignore all `Mark` actions
  *     - if `append`(s) are followed by `delete` all `append`(s), except last, are dropped
  *
@@ -121,9 +122,20 @@ private[journal] object Batch {
         }
 
       case ActionRecord(append: Action.Append, partitionOffset: PartitionOffset) =>
+        def appendsBeforePurge = state.batches.drop(1).headOption.exists {
+          case _: Purge => true
+          case _ => false
+        }
+
         state.next match {
 
-          case Some(_: Purge) => state
+          // the youngest append before a purge carries the head seqNr the purge's tombstone keeps
+          case Some(_: Purge) =>
+            val record = ActionRecord(append, partitionOffset)
+            state.prepend(Appends(partitionOffset.offset, NonEmptyList.one(record)))
+
+          // older appends before a purge are dropped
+          case Some(_: Appends) if appendsBeforePurge => state
 
           case Some(next: Appends) =>
             val append1 =

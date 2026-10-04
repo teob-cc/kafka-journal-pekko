@@ -222,7 +222,18 @@ class BatchSpec extends AnyFunSuite with Matchers {
         Nel.of(purge(offset = 0, origin = "origin0"), mark(offset = 1), purge(offset = 2, origin = "origin")),
         List(purges(offset = 2, origin = "origin")),
       ),
-      (Nel.of(append(offset = 0, seqNr = 1), purge(offset = 1)), List(purges(offset = 1))),
+      (
+        Nel.of(append(offset = 0, seqNr = 1), purge(offset = 1)),
+        List(appends(0, append(offset = 0, seqNr = 1)), purges(offset = 1)),
+      ),
+      (
+        Nel.of(append(offset = 0, seqNr = 1), append(1, 2, 3), purge(offset = 2)),
+        List(appends(1, append(1, 2, 3)), purges(offset = 2)),
+      ),
+      (
+        Nel.of(append(offset = 0, seqNr = 1), delete(offset = 1, to = 1), purge(offset = 2)),
+        List(appends(0, append(offset = 0, seqNr = 1)), purges(offset = 2)),
+      ),
       (
         Nel.of(purge(offset = 0), append(offset = 1, seqNr = 1)),
         List(purges(offset = 0), appends(1, append(offset = 1, seqNr = 1))),

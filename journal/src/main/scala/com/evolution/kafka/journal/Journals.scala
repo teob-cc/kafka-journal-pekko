@@ -340,14 +340,31 @@ object Journals {
                   pointer.map { _.seqNr }
                 }
             }
+            /*
+             * A purge still in the Kafka tail: the head it will keep as a tombstone is the latest
+             * seqNr appended before it, replicated or not. The id is never reborn at seq 1.
+             */
+            def pointerPurged(stream: F[StreamActionRecords[F]]) = {
+              for {
+                stream <- stream
+                tail <- stream(none).fold(none[SeqNr]) { (seqNr, record) =>
+                  record.action.header match {
+                    case a: ActionHeader.Append => seqNr max a.range.to.some
+                    case _ => seqNr
+                  }
+                }
+                pointer <- pointerEventual
+              } yield tail max pointer
+            }
+
             for {
               headAndStream <- headAndStream(key, SeqNr.min)
-              (headInfo, _) = headAndStream
+              (headInfo, stream) = headAndStream
               pointer <- headInfo match {
                 case HeadInfo.Empty => pointerEventual
                 case a: HeadInfo.Append => a.seqNr.some.pure[F]
                 case _: HeadInfo.Delete => pointerEventual
-                case HeadInfo.Purge => none[SeqNr].pure[F]
+                case HeadInfo.Purge => pointerPurged(stream)
               }
             } yield pointer
           }

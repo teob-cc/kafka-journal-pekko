@@ -109,8 +109,9 @@ abstract class JournalIntSpec[A] extends AsyncWordSpec with JournalSuite {
             _ = events shouldEqual List.empty
             pointer <- journal.purge
             _ = pointer.map { _.partition } shouldEqual partition.some
+            // the purged id keeps its head seqNr: it is never reborn at seq 1
             pointer <- journal.pointer
-            _ = pointer shouldEqual none
+            _ = pointer shouldEqual seqNr.some
             events <- journal.read
             _ = events shouldEqual List.empty
             metadata = recordMetadata.withExpireAfter(1.day.toExpireAfter.some)
@@ -125,7 +126,7 @@ abstract class JournalIntSpec[A] extends AsyncWordSpec with JournalSuite {
             pointer <- journal.purge
             _ = pointer.map { _.partition } shouldEqual partition.some
             pointer <- journal.pointer
-            _ = pointer shouldEqual none
+            _ = pointer shouldEqual seqNr.some
           } yield Succeeded
 
           result.run(1.minute)

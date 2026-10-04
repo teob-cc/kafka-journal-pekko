@@ -208,11 +208,11 @@ class ReplicatorIntSpec extends AsyncWordSpec with BeforeAndAfterAll with Matche
       result.run(5.minutes)
     }
 
-    "purge" in {
+    "purge, keep a tombstone at the head seq, and continue above it" in {
       val result = for {
         key <- Key.random[IO](topic)
         journal = journals(key)
-        expected <- append(journal, Nel.of(event(1)))
+        expected <- append(journal, Nel.of(event(1), event(2), event(3)))
         events <- read(key)(_.nonEmpty)
         _ = events shouldEqual expected.toList
         pointer <- journal.pointer
@@ -221,8 +221,19 @@ class ReplicatorIntSpec extends AsyncWordSpec with BeforeAndAfterAll with Matche
         _ = pointer.map { _.partition } shouldEqual expected.head.partition.some
         events <- read(key)(_.isEmpty)
         _ = events shouldEqual Nil
+        // the purged id is not reborn at seq 1: its head seq stays
+        pointer <- eventualJournal.pointer(key)
+        _ = pointer.map { _.seqNr } shouldEqual expected.last.seqNr.some
         pointer <- journal.pointer
-        _ = pointer shouldEqual none
+        _ = pointer shouldEqual expected.last.seqNr.some
+        // the next incarnation continues above the old head
+        expected <- append(journal, Nel.of(event(4), event(5)))
+        events <- read(key)(_.size == 2)
+        _ = events shouldEqual expected.toList
+        events <- journal.read[Payload](SeqNr.min).toList
+        _ = events.map { _.seqNr } shouldEqual expected.toList.map { _.seqNr }
+        pointer <- journal.pointer
+        _ = pointer shouldEqual expected.last.seqNr.some
       } yield {}
       result.run(5.minutes)
     }

@@ -43,6 +43,7 @@ private[journal] object MetaJournalStatements {
       |properties MAP<TEXT,TEXT>,
       |metadata TEXT,
       |cutoff BIGINT,
+      |purged_to BIGINT,
       |PRIMARY KEY ((topic, segment), id))
       |""".stripMargin
 
@@ -66,6 +67,14 @@ private[journal] object MetaJournalStatements {
    */
   def addCutoff(table: TableName): String = {
     s"ALTER TABLE ${ table.toCql } ADD cutoff BIGINT"
+  }
+
+  /**
+   * The last [[SeqNr]] of the purged incarnations of a journal: a purge keeps the head as a
+   * tombstone, so the id is never reborn at seq 1
+   */
+  def addPurgedTo(table: TableName): String = {
+    s"ALTER TABLE ${ table.toCql } ADD purged_to BIGINT"
   }
 
   trait Insert[F[_]] {
@@ -106,8 +115,9 @@ private[journal] object MetaJournalStatements {
            |record_id,
            |origin,
            |properties,
-           |cutoff)
-           |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           |cutoff,
+           |purged_to)
+           |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            |""".stripMargin
 
       query
@@ -151,7 +161,7 @@ private[journal] object MetaJournalStatements {
 
       val query =
         s"""
-           |SELECT partition, offset, segment_size, seq_nr, delete_to, expire_after, expire_on, record_id, cutoff FROM ${ name.toCql }
+           |SELECT partition, offset, segment_size, seq_nr, delete_to, expire_after, expire_on, record_id, cutoff, purged_to FROM ${ name.toCql }
            |WHERE id = ?
            |AND topic = ?
            |AND segment = ?
@@ -192,7 +202,7 @@ private[journal] object MetaJournalStatements {
 
       val query =
         s"""
-           |SELECT partition, offset, seq_nr, delete_to, cutoff FROM ${ name.toCql }
+           |SELECT partition, offset, seq_nr, delete_to, cutoff, purged_to FROM ${ name.toCql }
            |WHERE id = ?
            |AND topic = ?
            |AND segment = ?
@@ -217,6 +227,7 @@ private[journal] object MetaJournalStatements {
                 seqNr = row.decode[SeqNr],
                 deleteTo = row.decode[Option[DeleteTo]]("delete_to"),
                 cutoff = row.decode[Option[SeqNr]]("cutoff"),
+                purgedTo = row.decode[Option[SeqNr]]("purged_to"),
               )
             }
         }
@@ -587,6 +598,129 @@ private[journal] object MetaJournalStatements {
               .encode("updated", timestamp)
               .encode(expiry)
               .encode("cutoff", cutoff)
+              .setConsistencyLevel(consistencyConfig.value)
+              .first
+              .void
+        }
+    }
+  }
+
+  /**
+   * Turns the head of a journal into a tombstone: everything up to `seqNr` is deleted and belongs
+   * to a purged incarnation. The record id stays; the cutoff and the expiry go.
+   */
+  trait UpdatePurged[F[_]] {
+
+    def apply(
+      key: Key,
+      segment: SegmentNr,
+      partitionOffset: PartitionOffset,
+      timestamp: Instant,
+      seqNr: SeqNr,
+    ): F[Unit]
+  }
+
+  object UpdatePurged {
+
+    def of[F[_]: Monad: CassandraSession](
+      name: TableName,
+      consistencyConfig: CassandraConsistencyConfig.Write,
+    ): F[UpdatePurged[F]] = {
+
+      val query =
+        s"""
+           |UPDATE ${ name.toCql }
+           |SET partition = ?, offset = ?, seq_nr = ?, delete_to = ?, purged_to = ?, updated = ?,
+           |cutoff = null, expire_after = null, expire_on = null
+           |WHERE id = ?
+           |AND topic = ?
+           |AND segment = ?
+           |""".stripMargin
+
+      query
+        .prepare
+        .map {
+          prepared => (
+            key: Key,
+            segment: SegmentNr,
+            partitionOffset: PartitionOffset,
+            timestamp: Instant,
+            seqNr: SeqNr,
+          ) =>
+            prepared
+              .bind()
+              .encode(key)
+              .encode(segment)
+              .encode(partitionOffset)
+              .encode(seqNr)
+              .encode(seqNr.toDeleteTo)
+              .encode("purged_to", seqNr)
+              .encode("updated", timestamp)
+              .setConsistencyLevel(consistencyConfig.value)
+              .first
+              .void
+        }
+    }
+  }
+
+  /**
+   * Starts a new incarnation of a purged journal on its tombstone: every column of the head is
+   * written, the absent ones as nulls
+   */
+  trait UpdateIncarnation[F[_]] {
+
+    def apply(
+      key: Key,
+      segment: SegmentNr,
+      timestamp: Instant,
+      journalHead: JournalHead,
+      origin: Option[Origin],
+    ): F[Unit]
+  }
+
+  object UpdateIncarnation {
+
+    def of[F[_]: Monad: CassandraSession](
+      name: TableName,
+      consistencyConfig: CassandraConsistencyConfig.Write,
+    ): F[UpdateIncarnation[F]] = {
+      import Expiry.{encodeByNameOptExpireAfter, encodeByNameOptExpireOn}
+
+      val query =
+        s"""
+           |UPDATE ${ name.toCql }
+           |SET partition = ?, offset = ?, segment_size = ?, seq_nr = ?, delete_to = ?, expire_after = ?,
+           |expire_on = ?, record_id = ?, cutoff = ?, purged_to = ?, origin = ?, updated = ?
+           |WHERE id = ?
+           |AND topic = ?
+           |AND segment = ?
+           |""".stripMargin
+
+      query
+        .prepare
+        .map {
+          prepared => (
+            key: Key,
+            segment: SegmentNr,
+            timestamp: Instant,
+            journalHead: JournalHead,
+            origin: Option[Origin],
+          ) =>
+            prepared
+              .bind()
+              .encode(key)
+              .encode(segment)
+              .encode(journalHead.partitionOffset)
+              .encode(journalHead.segmentSize)
+              .encode(journalHead.seqNr)
+              .encode("delete_to", journalHead.deleteTo)
+              .encode("expire_after", journalHead.expiry.map { _.after })
+              .encode("expire_on", journalHead.expiry.map { _.on })
+              .encode("record_id", journalHead.recordId)
+              .encode("cutoff", journalHead.cutoff)
+              .encode("purged_to", journalHead.purgedTo)
+              .encode("origin", origin)
+              .encode("updated", timestamp)
               .setConsistencyLevel(consistencyConfig.value)
               .first
               .void

@@ -61,7 +61,13 @@ object EventualCassandraSpec {
           .metaJournal
           .get(key)
           .map { metadata =>
-            JournalPointer(metadata.partitionOffset, metadata.seqNr, metadata.deleteTo, metadata.cutoff)
+            JournalPointer(
+              metadata.partitionOffset,
+              metadata.seqNr,
+              metadata.deleteTo,
+              metadata.cutoff,
+              metadata.purgedTo,
+            )
           }
         (state, pointer)
       }
@@ -406,6 +412,50 @@ object EventualCassandraSpec {
       }
     }
 
+    val updateMetaJournalPurged: MetaJournalStatements.UpdatePurged[StateT] = {
+      (
+        key,
+        _,
+        partitionOffset,
+        _,
+        seqNr,
+      ) =>
+        {
+          StateT { state =>
+            val metaJournal = state.metaJournal
+            val state1 = for {
+              entry <- metaJournal.get(key)
+            } yield {
+              val entry1 = entry.copy(
+                partitionOffset = partitionOffset,
+                seqNr = seqNr,
+                deleteTo = seqNr.toDeleteTo.some,
+                purgedTo = seqNr.some,
+                cutoff = none,
+                expiry = none,
+              )
+              state.copy(metaJournal = metaJournal.updated(key, entry1))
+            }
+            (state1 getOrElse state, ())
+          }
+        }
+    }
+
+    val updateMetaJournalIncarnation: MetaJournalStatements.UpdateIncarnation[StateT] = {
+      (
+        key,
+        _,
+        _,
+        journalHead,
+        _,
+      ) =>
+        {
+          StateT { state =>
+            (state.copy(metaJournal = state.metaJournal.updated(key, journalHead)), ())
+          }
+        }
+    }
+
     val insertPointer2: Pointer2Statements.Insert[StateT] = {
       (
         topic,
@@ -463,6 +513,8 @@ object EventualCassandraSpec {
       updateMetaJournalPartitionOffset,
       deleteMetaJournal,
       deleteMetaJournalExpiry,
+      updateMetaJournalPurged,
+      updateMetaJournalIncarnation,
     )
 
     val statements = ReplicatedCassandra.Statements(

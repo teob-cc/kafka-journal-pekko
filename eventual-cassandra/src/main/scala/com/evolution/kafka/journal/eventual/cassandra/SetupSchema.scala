@@ -67,6 +67,9 @@ private[journal] object SetupSchema {
     def metaJournalAddColumnCutoff: String =
       MetaJournalStatements.addCutoff(schema.metaJournal)
 
+    def metaJournalAddColumnPurgedTo: String =
+      MetaJournalStatements.addPurgedTo(schema.metaJournal)
+
     Nel.of(
       journalAddColumnHeaders,
       journalAddColumnVersion,
@@ -78,6 +81,7 @@ private[journal] object SetupSchema {
       dropTableMetadataFixed,
       dropTablePointerFixed,
       metaJournalAddColumnCutoff,
+      metaJournalAddColumnPurgedTo,
     )
 
   }

@@ -133,8 +133,9 @@ class JournalSpec extends AnyWordSpec with Matchers {
               _ <- journal.purge
               a <- journal.read(SeqRange.all)
               _ = a shouldEqual List.empty
+              // the purged id keeps its head seqNr: it is never reborn at seq 1
               a <- journal.pointer
-              _ = a shouldEqual none
+              _ = a shouldEqual seqNrLast
             } yield Succeeded
         }
       }
@@ -231,7 +232,7 @@ class JournalSpec extends AnyWordSpec with Matchers {
           seqNrs <- journal.read(SeqRange.all)
           _ = seqNrs shouldEqual Nil
           pointer <- journal.pointer
-          _ = pointer shouldEqual none
+          _ = pointer shouldEqual SeqNr.unsafe(4).some
         } yield Succeeded
       }
     }
@@ -715,7 +716,8 @@ object JournalSpec {
             offset <- state.replicatedState.offset
           } yield {
             val partitionOffset = PartitionOffset(partition, offset)
-            JournalPointer(partitionOffset, seqNr, state.replicatedState.deleteTo, state.replicatedState.cutoff)
+            val replicated = state.replicatedState
+            JournalPointer(partitionOffset, seqNr, replicated.deleteTo, replicated.cutoff, replicated.purgedTo)
           }
 
           (state, pointer)
@@ -793,6 +795,7 @@ object JournalSpec {
       deleteTo: Option[DeleteTo] = None,
       offset: Option[Offset] = None,
       cutoff: Option[SeqNr] = None,
+      purgedTo: Option[SeqNr] = None,
     ) {
 
       def apply(record: ActionRecord[Action]): State = {
@@ -837,12 +840,18 @@ object JournalSpec {
           }
         }
 
+        // the head stays as a tombstone
         def onPurge = {
-          events
-            .lastOption
-            .fold(updateOffset) { _ =>
-              copy(events = Queue.empty, deleteTo = None, offset = offset.some, cutoff = None)
-            }
+          val seqNr = events.lastOption.map { _.event.seqNr } max deleteTo.map { _.value }
+          seqNr.fold(updateOffset) { seqNr =>
+            copy(
+              events = Queue.empty,
+              deleteTo = seqNr.toDeleteTo.some,
+              offset = offset.some,
+              cutoff = None,
+              purgedTo = seqNr.some,
+            )
+          }
         }
 
         record.action match {
