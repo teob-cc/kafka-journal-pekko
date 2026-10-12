@@ -1,8 +1,9 @@
 name: Release
 
 # A deliberate release of cc.teob kafka-journal: Maven Central, then the platform Nexus, then the lambda-house mirror,
-# then the tag v<version> here. A master push only publishes a snapshot (snapshot.yml); teob and the other services
-# depend on releases only, so a release is the one way a change reaches them.
+# then the tag v<version> here. A master push publishes nothing (no snapshots: Central's are not enabled for cc.teob,
+# and nothing consumes them); teob and the other services depend on releases only, so a release is the one way a
+# change reaches them.
 #
 # Refuses to release a commit whose E2E (clone platform) run did not pass, and a version that was already released.
 # With dry_run it builds, signs and stages, and lists what would be published.
