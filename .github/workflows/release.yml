@@ -5,15 +5,21 @@ name: Release
 # and nothing consumes them); teob and the other services depend on releases only, so a release is the one way a
 # change reaches them.
 #
+# With `central: false` it skips Maven Central (no signing, no staging, no Central release) and does the rest: the
+# platform Nexus, the lambda-house mirror (which publishes to the lambda-house Nexus) and the tag. In-progress
+# versions go out this way, readable only with Nexus credentials; one that should be public is a later version
+# released with `central: true` (a released version cannot be released again).
+#
 # Refuses to release a commit whose E2E (clone platform) run did not pass, and a version that was already released.
-# With dry_run it builds, signs and stages, and lists what would be published.
+# With dry_run it builds, signs and stages (with `central: false`: stages into target/repository unsigned), and lists
+# what would be published.
 #
 # Runs on GitHub-hosted runners: the repository is public, and the teob-cc self-hosted runners are not offered to
 # public repositories.
 #
 # Secrets: SONATYPE_USER, SONATYPE_PASSWORD, GPG_SECRET, GPG_PASS (organisation-wide, shared with the cats-effect and
-# blaze forks); NEXUS_USERNAME, NEXUS_PASSWORD in the `test` environment; LAMBDA_HOUSE_MIRROR_APP_KEY and the
-# variable LAMBDA_HOUSE_MIRROR_APP_ID for the mirror.
+# blaze forks; unused with `central: false`); NEXUS_USERNAME, NEXUS_PASSWORD in the `test` environment;
+# LAMBDA_HOUSE_MIRROR_APP_KEY and the variable LAMBDA_HOUSE_MIRROR_APP_ID for the mirror.
 on:
   workflow_dispatch:
     inputs:
@@ -21,6 +27,11 @@ on:
         description: 'Version to release: <yyyyMM>.<minor>.<n>, e.g. 202610.01.6'
         required: true
         type: string
+      central:
+        description: 'Release to Maven Central too; off: only the Nexuses, the lambda-house mirror and the tag'
+        required: false
+        default: true
+        type: boolean
       dry_run:
         description: 'Build, sign and stage only: no Central, no Nexus, no mirror, no tag'
         required: false
@@ -89,6 +100,7 @@ jobs:
         uses: sbt/setup-sbt@v1
 
       - name: Import the signing key
+        if: ${{ inputs.central }}
         env:
           GPG_SECRET: ${{ secrets.GPG_SECRET }}
           GPG_PASS: ${{ secrets.GPG_PASS }}
@@ -107,16 +119,26 @@ jobs:
           PACKAGE_VERSION: ${{ inputs.version }}
 
       - name: Sign and stage for Maven Central
+        if: ${{ inputs.central }}
         run: sbt publishSigned
         env:
           PUBLISH_TARGET: central
           PACKAGE_VERSION: ${{ inputs.version }}
 
+      # A dry run without Central has nothing staged for it; stage into the build's file repository instead (the
+      # build's publishTo without NEXUS_REGISTRY), so the listing below still shows what would be published.
+      - name: Stage locally (dry run without Central)
+        if: ${{ !inputs.central && inputs.dry_run }}
+        run: env -u NEXUS_REGISTRY sbt publish
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+
       - name: List staged artifacts
-        run: find target/sona-staging -name '*.pom' | sed 's|.*/||' | sort
+        if: ${{ inputs.central || inputs.dry_run }}
+        run: find ${{ inputs.central && 'target/sona-staging' || 'target/repository' }} -name '*.pom' | sed 's|.*/||' | sort
 
       - name: Release to Maven Central
-        if: ${{ !inputs.dry_run }}
+        if: ${{ inputs.central && !inputs.dry_run }}
         run: sbt sonaRelease
         env:
           PUBLISH_TARGET: central
@@ -168,9 +190,26 @@ jobs:
         run: rm -rf ~/.gnupg
 
       - name: Summary
+        env:
+          CENTRAL: ${{ inputs.central }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          echo "### ${{ inputs.dry_run && 'Staged (dry run)' || 'Released to Maven Central and Nexus' }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
-          echo "**Central:** https://central.sonatype.com/artifact/cc.teob/kafka-journal-persistence_3/$VERSION" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          if [ "$CENTRAL" = "true" ]; then TARGETS="Maven Central, $NEXUS_REGISTRY"; else TARGETS="$NEXUS_REGISTRY (not Maven Central)"; fi
+          if [ "$DRY_RUN" = "true" ]; then
+            HEADING="Staged (dry run) for $TARGETS"
+          else
+            HEADING="Released to $TARGETS, the lambda-house mirror and the tag v$VERSION"
+          fi
+          echo "$HEADING"
+          {
+            echo "### $HEADING"
+            echo ""
+            echo "**Version:** $VERSION"
+            if [ "$CENTRAL" = "true" ]; then
+              echo "**Central:** https://central.sonatype.com/artifact/cc.teob/kafka-journal-persistence_3/$VERSION"
+            else
+              echo "**Central:** skipped (central: false); a later version released with central: true goes public"
+            fi
+            echo "**Nexus:** https://$NEXUS_REGISTRY/repository/maven-releases/cc/teob/"
+            echo "**Commit:** ${{ github.sha }}"
+          } >> "$GITHUB_STEP_SUMMARY"
