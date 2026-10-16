@@ -517,6 +517,10 @@ private[journal] object ReplicatedCassandra {
                           }
                         } yield result
                       }
+
+                      def cutoff: F[Option[SeqNr]] = {
+                        journalHeadRef.get.map { _.flatMap { _.cutoff } }
+                      }
                     }
                 }.toResource
               }
