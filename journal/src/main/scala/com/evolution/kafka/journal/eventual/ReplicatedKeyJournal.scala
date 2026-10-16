@@ -30,6 +30,13 @@ trait ReplicatedKeyJournal[F[_]] {
     offset: Offset,
     timestamp: Instant,
   ): F[Changed]
+
+  /**
+   * The latest cutoff of the journal as replicated: the seqNr of its latest epoch record
+   * ([[EpochMark]]), `None` when it has none, or none since its purge. The replicator checks a
+   * tiering delete against it ([[TieringDelete]]).
+   */
+  def cutoff: F[Option[SeqNr]]
 }
 
 object ReplicatedKeyJournal {
@@ -38,7 +45,7 @@ object ReplicatedKeyJournal {
 
   def empty[F[_]: Applicative]: ReplicatedKeyJournal[F] = const(false.pure[F])
 
-  def const[F[_]](value: F[Boolean]): ReplicatedKeyJournal[F] = {
+  def const[F[_]: Applicative](value: F[Boolean]): ReplicatedKeyJournal[F] = {
     class Const
     new Const with ReplicatedKeyJournal[F] {
 
@@ -60,6 +67,8 @@ object ReplicatedKeyJournal {
         offset: Offset,
         timestamp: Instant,
       ): F[Changed] = value
+
+      def cutoff: F[Option[SeqNr]] = none[SeqNr].pure[F]
     }
   }
 
@@ -98,6 +107,8 @@ object ReplicatedKeyJournal {
         ): G[Changed] = {
           f(self.purge(offset, timestamp))
         }
+
+        def cutoff: G[Option[SeqNr]] = f(self.cutoff)
       }
     }
 
@@ -161,6 +172,8 @@ object ReplicatedKeyJournal {
             _ <- log.debug(s"$key purge in ${ d.toMillis }ms, offset: $partition:$offset")
           } yield r
         }
+
+        def cutoff: F[Option[SeqNr]] = self.cutoff
       }
     }
 
@@ -212,6 +225,8 @@ object ReplicatedKeyJournal {
             _ <- metrics.purge(topic, d)
           } yield r
         }
+
+        def cutoff: F[Option[SeqNr]] = self.cutoff
       }
     }
 
@@ -285,6 +300,12 @@ object ReplicatedKeyJournal {
                 a,
               )
             }
+        }
+
+        def cutoff: F[Option[SeqNr]] = {
+          self
+            .cutoff
+            .handleErrorWith { a => error(s"cutoff key: $key", a) }
         }
       }
     }

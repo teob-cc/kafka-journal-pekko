@@ -742,6 +742,129 @@ class TopicReplicatorSpec extends AsyncWordSpec with Matchers {
         }
         .unsafeToFuture()
     }
+
+    "refuse a tiering delete at or past the latest cutoff, and count it" in {
+      val key = keyOf("tiering-past")
+      val result = for {
+        result <- replicate(List(cut(key), List(tieringDeleteOf(key, 4))))
+        _ = seqNrs(result, key) shouldEqual List(1, 2, 3, 4, 5)
+        _ = deleteTo(result, key) shouldEqual none
+        _ = cutoff(result, key) shouldEqual 4.some
+        _ = refusals(result) shouldEqual List(Metrics.TieringDeleteRefused(key.id, deleteTo = 4, cutoff = 4.some))
+      } yield {}
+      result.as(succeed).unsafeToFuture()
+    }
+
+    "apply a tiering delete below the latest cutoff" in {
+      val key = keyOf("tiering-below")
+      val result = for {
+        result <- replicate(List(cut(key), List(tieringDeleteOf(key, 3))))
+        _ = seqNrs(result, key) shouldEqual List(4, 5)
+        _ = deleteTo(result, key) shouldEqual 3.some
+        _ = refusals(result) shouldEqual Nil
+      } yield {}
+      result.as(succeed).unsafeToFuture()
+    }
+
+    "check each tiering delete of a poll before the deletes are merged" in {
+      val key = keyOf("tiering-merged")
+      val smaller = tieringDeleteOf(key, 3)
+      val larger = tieringDeleteOf(key, 5)
+      List(List(smaller, larger), List(larger, smaller), List(smaller, appendOf(key, Nel.of(6)), larger))
+        .traverse { poll =>
+          for {
+            result <- replicate(List(cut(key), poll))
+            _ = seqNrs(result, key) shouldEqual (4 to 3 + poll.size).toList
+            _ = deleteTo(result, key) shouldEqual 3.some
+            _ = refusals(result) shouldEqual List(Metrics.TieringDeleteRefused(key.id, deleteTo = 5, cutoff = 4.some))
+          } yield {}
+        }
+        .as(succeed)
+        .unsafeToFuture()
+    }
+
+    "check a tiering delete against an epoch record earlier in its poll, and against none after a purge" in {
+      val marked = keyOf("tiering-marked")
+      val purged = keyOf("tiering-purged")
+      val poll = List(
+        appendOf(marked, Nel.of(1, 2, 3), epochOf(3)),
+        tieringDeleteOf(marked, 2),
+        appendOf(purged, Nel.of(1, 2, 3), epochOf(3)),
+        purgeOf(purged),
+        tieringDeleteOf(purged, 2),
+      )
+      val result = for {
+        result <- replicate(List(poll))
+        _ = seqNrs(result, marked) shouldEqual List(3)
+        _ = deleteTo(result, marked) shouldEqual 2.some
+        _ = seqNrs(result, purged) shouldEqual Nil
+        _ = refusals(result) shouldEqual List(Metrics.TieringDeleteRefused(purged.id, deleteTo = 2, cutoff = none))
+      } yield {}
+      result.as(succeed).unsafeToFuture()
+    }
+
+    "apply a delete of any other origin past the cutoff, and refuse a tiering delete of a journal with no cutoff" in {
+      val other = keyOf("tiering-other")
+      val uncut = keyOf("tiering-uncut")
+      val result = for {
+        result <- replicate(
+          List(
+            cut(other) ++ List(appendOf(uncut, Nel.of(1, 2, 3))),
+            List(deleteOf(other, 5), tieringDeleteOf(uncut, 2)),
+          ),
+        )
+        _ = seqNrs(result, other) shouldEqual Nil
+        _ = deleteTo(result, other) shouldEqual 5.some
+        _ = seqNrs(result, uncut) shouldEqual List(1, 2, 3)
+        _ = deleteTo(result, uncut) shouldEqual none
+        _ = refusals(result) shouldEqual List(Metrics.TieringDeleteRefused(uncut.id, deleteTo = 2, cutoff = none))
+      } yield {}
+      result.as(succeed).unsafeToFuture()
+    }
+  }
+
+  /**
+   * Replicates the polls, each a list of actions on partition 0, at successive offsets.
+   */
+  private def replicate(polls: List[List[Action]]): IO[State] = {
+    val topicPartition = topicPartitionOf(0)
+    val (records, _) = polls.foldLeft((List.empty[ConsRecords], 0L)) {
+      case ((records, offset), actions) =>
+        val poll = actions.zipWithIndex.map {
+          case (action, idx) => consumerRecordOf(action, topicPartition, offset + idx)
+        }
+        (records :+ ConsumerRecordsOf(poll), offset + actions.size)
+    }
+    topicReplicator.run(State(records = records)).map { case (state, _) => state }
+  }
+
+  /**
+   * Events 1 to 3, then 4 and 5 with the epoch record at 4: the latest cutoff is 4.
+   */
+  private def cut(key: Key): List[Action] = {
+    List(appendOf(key, Nel.of(1, 2, 3)), appendOf(key, Nel.of(4, 5), epochOf(4)))
+  }
+
+  private def epochOf(seqNr: Int): Headers = EpochMark.headers(SeqNr.unsafe(seqNr))
+
+  private def seqNrs(state: State, key: Key): List[Long] = {
+    state.journal.getOrElse(key.id, Nil).map { _.seqNr.value }.sorted
+  }
+
+  private def deleteTo(state: State, key: Key): Option[Long] = {
+    state.metaJournal.get(key.id).flatMap { _.deleteTo }.map { _.value.value }
+  }
+
+  private def cutoff(state: State, key: Key): Option[Long] = {
+    state.metaJournal.get(key.id).flatMap { _.cutoff }.map { _.value }
+  }
+
+  private def refusals(state: State): List[Metrics] = {
+    state.metrics.reverse.collect { case refused: Metrics.TieringDeleteRefused => refused }
+  }
+
+  private def tieringDeleteOf(key: Key, to: Int) = {
+    Action.Delete(key, timestamp, SeqNr.unsafe(to).toDeleteTo, TieringDelete.origin.some, version.some)
   }
 
   private def consumerRecordOf(
@@ -780,7 +903,20 @@ class TopicReplicatorSpec extends AsyncWordSpec with Matchers {
     )
   }
 
-  private def appendOf(key: Key, seqNrs: Nel[Int], expireAfter: Option[ExpireAfter] = none) = {
+  private def appendOf(key: Key, seqNrs: Nel[Int], marks: Headers = Headers.empty) = {
+    appendWith(key, seqNrs, none, marks)
+  }
+
+  private def appendOf(key: Key, seqNrs: Nel[Int], expireAfter: Option[ExpireAfter]) = {
+    appendWith(key, seqNrs, expireAfter, Headers.empty)
+  }
+
+  private def appendWith(
+    key: Key,
+    seqNrs: Nel[Int],
+    expireAfter: Option[ExpireAfter],
+    marks: Headers,
+  ) = {
     Action
       .Append
       .of[Try, Payload](
@@ -793,7 +929,7 @@ class TopicReplicatorSpec extends AsyncWordSpec with Matchers {
           recordMetadata.payload.copy(expireAfter = expireAfter),
         ),
         metadata = recordMetadata.header,
-        headers = headers,
+        headers = headers ++ marks,
       )
       .get
   }
@@ -867,6 +1003,8 @@ object TopicReplicatorSpec {
     final case class Round(duration: FiniteDuration = 0.millis, records: Int) extends Metrics
 
     final case class Gap(partition: Int, records: Long) extends Metrics
+
+    final case class TieringDeleteRefused(id: String, deleteTo: Int, cutoff: Option[Int]) extends Metrics
   }
 
   implicit def monoidDataF[A: Monoid]: Monoid[StateT[A]] = Applicative.monoid[StateT, A]
@@ -926,8 +1064,14 @@ object TopicReplicatorSpec {
 
                     val deleteTo = state.metaJournal.get(id).flatMap(_.deleteTo)
 
+                    // the latest epoch record, as ReplicatedCassandra keeps it
+                    val cutoff =
+                      (state.metaJournal.get(id).flatMap(_.cutoff).toList ++ events.toList.flatMap {
+                        event => EpochMark(event.headers).toOption.flatten.filter(_ == event.seqNr)
+                      }).maxOption
+
                     val metaJournal =
-                      MetaJournal(PartitionOffset(partition, offset), deleteTo, expireAfter, events.last.origin)
+                      MetaJournal(PartitionOffset(partition, offset), deleteTo, expireAfter, events.last.origin, cutoff)
 
                     val state1 = state.copy(
                       journal = state.journal.updated(id, records),
@@ -969,6 +1113,10 @@ object TopicReplicatorSpec {
 
                     (state1, purged)
                   }
+                }
+
+                def cutoff: StateT[Option[SeqNr]] = {
+                  StateT { state => (state, state.metaJournal.get(id).flatMap(_.cutoff)) }
                 }
               }
 
@@ -1064,6 +1212,16 @@ object TopicReplicatorSpec {
         s + Metrics.Gap(partition = partition.value, records = records)
       }
     }
+
+    def tieringDeleteRefused(refused: TieringDelete.Refused): StateT[Unit] = {
+      StateT { s =>
+        s + Metrics.TieringDeleteRefused(
+          id = refused.key.id,
+          deleteTo = refused.deleteTo.value.toInt,
+          cutoff = refused.cutoff.map(_.value.toInt),
+        )
+      }
+    }
   }
 
   val topicReplicator: StateT[Unit] = {
@@ -1145,6 +1303,7 @@ object TopicReplicatorSpec {
           deleteTo = result.map { _.toDeleteTo } orElse deleteTo1,
           expireAfter = none,
           origin = origin,
+          cutoff = self.metaJournal.get(id).flatMap(_.cutoff),
         )
         copy(journal = self.journal.updated(id, records), metaJournal = self.metaJournal.updated(id, metaJournal))
       }
@@ -1184,6 +1343,7 @@ object TopicReplicatorSpec {
     deleteTo: Option[DeleteTo],
     expireAfter: Option[ExpireAfter],
     origin: Option[Origin],
+    cutoff: Option[SeqNr] = none,
   )
 
   case object NotImplemented extends RuntimeException with NoStackTrace

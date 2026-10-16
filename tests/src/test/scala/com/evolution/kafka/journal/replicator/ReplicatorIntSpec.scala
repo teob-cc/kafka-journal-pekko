@@ -257,6 +257,8 @@ class ReplicatorIntSpec extends AsyncWordSpec with BeforeAndAfterAll with Matche
           def round(latency: FiniteDuration, records: Int): IO[Unit] = IO.unit
 
           def gap(partition: Partition, records: Long): IO[Unit] = gaps.update { (partition, records) :: _ }
+
+          def tieringDeleteRefused(refused: TieringDelete.Refused): IO[Unit] = IO.unit
         }
         val metrics = new Replicator.Metrics[IO] {
           def journal: Option[ReplicatedJournal.Metrics[IO]] = none

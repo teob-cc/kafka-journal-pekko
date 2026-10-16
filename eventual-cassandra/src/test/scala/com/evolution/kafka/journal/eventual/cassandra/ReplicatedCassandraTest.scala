@@ -82,7 +82,7 @@ class ReplicatedCassandraTest extends AnyFunSuite with Matchers {
     val (segmentsFirst, segmentsSecond) = segments
     val segmentNrsOf = SegmentNrs.Of[StateT](first = segmentsFirst, second = segmentsSecond)
     val segmentOfId = SegmentNr.Of[Id](segmentsFirst)
-    val journal = {
+    val replicated = {
       implicit val parallel: Parallel.Aux[StateT, StateT] = Parallel.identity[StateT]
       implicit val secureRandom: SecureRandom[StateT] = staticSecureRandom
       ReplicatedCassandra(
@@ -90,8 +90,9 @@ class ReplicatedCassandraTest extends AnyFunSuite with Matchers {
         segmentNrsOf,
         statements,
         ExpiryService(ZoneOffset.UTC),
-      ).toFlat
+      )
     }
+    val journal = replicated.toFlat
 
     val suffix = s"segmentSize: $segmentSize, segments: $segments"
 
@@ -149,6 +150,43 @@ class ReplicatedCassandraTest extends AnyFunSuite with Matchers {
         (a.key, a.journalHead.cutoff.map(_.value))
       } shouldEqual
         List((key1, 1L.some), (key0, none))
+    }
+
+    test(s"tell the latest cutoff of the head, none after a purge, $suffix") {
+      val key = Key(id = "id", topic = topic0)
+
+      def append(offset: Int, seqNrs: Nel[Int], mark: Option[String]) = {
+        val events = seqNrs.map { seqNr =>
+          val event = eventRecordOf(SeqNr.unsafe(seqNr), PartitionOffset(Partition.min, Offset.unsafe(offset))).event
+          mark.fold(event) { mark => event.copy(headers = event.headers + ((EpochMark.header, mark))) }
+        }
+        journal.append(key, Partition.min, Offset.unsafe(offset), timestamp0, none, events)
+      }
+
+      // the replicator reads it from the key journal it writes through
+      def cutoff = {
+        replicated
+          .journal(key.topic)
+          .flatMap { _.apply(Partition.min) }
+          .flatMap { _.journal(key.id) }
+          .use { _.cutoff }
+          .map { _.map { _.value } }
+      }
+
+      val stateT = for {
+        cutoff0 <- cutoff
+        _ <- append(offset = 0, Nel.of(1, 2), mark = none)
+        cutoff1 <- cutoff
+        _ <- append(offset = 1, Nel.of(3, 4), mark = "3".some)
+        cutoff2 <- cutoff
+        _ <- journal.delete(key, Partition.min, Offset.unsafe(2), timestamp0, SeqNr.unsafe(2).toDeleteTo, origin.some)
+        cutoff3 <- cutoff
+        _ <- journal.purge(key, Partition.min, Offset.unsafe(3), timestamp0)
+        cutoff4 <- cutoff
+      } yield List(cutoff0, cutoff1, cutoff2, cutoff3, cutoff4)
+
+      val (_, cutoffs) = stateT.run(State.empty).get
+      cutoffs shouldEqual List(none, none, 3L.some, 3L.some, none)
     }
 
     test(s"topics, $suffix") {

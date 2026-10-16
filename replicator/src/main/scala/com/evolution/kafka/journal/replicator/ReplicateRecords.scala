@@ -172,10 +172,30 @@ private[journal] object ReplicateRecords {
           }
       }
 
+      /*
+       * Each tiering delete is checked against the latest cutoff before the deletes are merged
+       * into batches, so that a refused delete never takes a smaller allowed one with it.
+       */
+      def guard(records: Nel[ActionRecord[Action]]): F[List[ActionRecord[Action]]] = {
+        if (records.exists { record => TieringDelete.is(record.action) }) {
+          val key = records.head.action.key
+          for {
+            cutoff <- journal.cutoff
+            (records1, refusals) = TieringDelete.guard(key, records, cutoff) { _.action }
+            _ <- refusals.traverse_ { refused =>
+              log.error(s"zero-tolerance: ${ refused.message }") *> metrics.tieringDeleteRefused(refused)
+            }
+          } yield records1
+        } else {
+          records.toList.pure[F]
+        }
+      }
+
       for {
         records <- records
           .toList
           .traverseFilter { record => consRecordToActionRecord(record) }
+        records <- records.toNel.fold { List.empty[ActionRecord[Action]].pure[F] } { guard }
         result <- records
           .toNel
           .foldMapM { records => apply(records) }

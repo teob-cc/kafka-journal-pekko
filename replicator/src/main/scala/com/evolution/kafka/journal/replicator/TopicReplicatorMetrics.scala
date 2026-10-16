@@ -3,6 +3,7 @@ package com.evolution.kafka.journal.replicator
 import cats.effect.*
 import cats.syntax.all.*
 import cats.{Applicative, Monad}
+import com.evolution.kafka.journal.TieringDelete
 import com.evolutiongaming.skafka.{Bytes as _, *}
 import com.evolutiongaming.smetrics.*
 import com.evolutiongaming.smetrics.MetricsHelper.*
@@ -44,6 +45,13 @@ trait TopicReplicatorMetrics[F[_]] {
    * a partition started above the replicator's pointer
    */
   def gap(partition: Partition, records: Long): F[Unit]
+
+  /**
+   * Accounts a tiering delete the replicator refused: its target is at or past the latest cutoff of
+   * the journal, or the journal has none (see [[TieringDelete]]). Zero-tolerance: it means the
+   * writer's own check was wrong or bypassed.
+   */
+  def tieringDeleteRefused(refused: TieringDelete.Refused): F[Unit]
 }
 
 object TopicReplicatorMetrics {
@@ -74,6 +82,8 @@ object TopicReplicatorMetrics {
       def round(duration: FiniteDuration, records: Int): F[Unit] = unit
 
       def gap(partition: Partition, records: Long): F[Unit] = unit
+
+      def tieringDeleteRefused(refused: TieringDelete.Refused): F[Unit] = unit
     }
   }
 
@@ -149,6 +159,12 @@ object TopicReplicatorMetrics {
       labels = LabelNames("topic", "partition"),
     )
 
+    val tieringDeletesRefusedCounter = registry.counter(
+      name = s"${ prefix }_tiering_deletes_refused",
+      help = "Number of tiering deletes refused, their target at or past the latest cutoff of the journal",
+      labels = LabelNames("topic"),
+    )
+
     for {
       replicationSummary <- replicationSummary
       deliverySummary <- deliverySummary
@@ -160,6 +176,7 @@ object TopicReplicatorMetrics {
       clientVersionGauge <- clientVersionGauge
       expirationDurationGauge <- expirationDurationGauge
       gapCounter <- gapCounter
+      tieringDeletesRefusedCounter <- tieringDeletesRefusedCounter
     } yield { (topic: Topic) =>
       {
 
@@ -207,6 +224,10 @@ object TopicReplicatorMetrics {
 
           def gap(partition: Partition, records: Long): F[Unit] = {
             gapCounter.labels(topic, partition.show).inc(records.toDouble)
+          }
+
+          def tieringDeleteRefused(refused: TieringDelete.Refused): F[Unit] = {
+            tieringDeletesRefusedCounter.labels(topic).inc()
           }
         }
       }
