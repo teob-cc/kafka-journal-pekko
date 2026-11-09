@@ -5,7 +5,7 @@ import sbt.Package.ManifestAttributes
 // CalVer: <yyyyMM>.<minor> base, bumped by hand. Every build is <base>-SNAPSHOT, which is what a
 // master push publishes (to the Central snapshots repository); a release is deliberate and names its
 // version, e.g. 202610.01.6, through PACKAGE_VERSION (the release workflow's input).
-lazy val versionBase = "202610.01"
+lazy val versionBase = "202611.01"
 ThisBuild / version := {
   sys
     .env
@@ -53,7 +53,7 @@ lazy val commonSettings = Seq(
     ),
   ),
   startYear := Some(2018),
-  crossScalaVersions := Seq("3.8.4"),
+  crossScalaVersions := Seq("3.9.0"),
   scalaVersion := crossScalaVersions.value.head,
   scalacOptions ++= Seq(
     "-release:17",

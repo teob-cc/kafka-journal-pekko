@@ -83,7 +83,8 @@ class TieringDeleteIntSpec extends AsyncWordSpec with JournalSuite {
   private def deleteTo(key: Key) = eventualJournal.pointer(key).map { _.flatMap { _.deleteTo }.map { _.value.value } }
 
   /**
-   * Events 1 to 3, then 4 and 5 with the epoch record at 4, then 6, replicated: the latest cutoff is 4.
+   * Events 1 to 3, then 4 and 5 with the epoch record at 4, then 6, replicated: the latest cutoff
+   * is 4.
    */
   private def cut(key: Key) = {
     for {
