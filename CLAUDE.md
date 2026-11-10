@@ -25,7 +25,7 @@ Publishing — **snapshots on every green push, releases only on purpose**:
 - A master push runs `e2e.yml` (the full IntegrationSuite against Redpanda + Scylla). When it is green, `snapshot.yml` publishes `<base>-SNAPSHOT` from exactly that commit to the Maven Central snapshots repository. Nothing else is published.
 - `release.yml` is dispatched by hand with a `version`. It refuses a commit whose e2e did not pass and a version already tagged, then releases to Maven Central, publishes to the platform Nexus, hands the commit to the lambda-house mirror and tags `v<version>`. `dry_run` builds, signs and stages only.
 - teob and every other service depend on releases only, never on snapshots.
-- The repository is public, so every workflow runs on GitHub-hosted runners; the teob-cc self-hosted runners are not offered to public repositories.
+- The repository is public; every workflow runs on `[self-hosted, test-public]`, teob-cc's runner pool for public repositories (runner group `public`: no cluster secrets, internet-only egress, fork PRs wait for approval; infra-skills `tools/k3s/public-runners.sh`). Never on GitHub-hosted runners.
 
 ## Documents in this repo
 

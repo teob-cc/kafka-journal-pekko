@@ -3,8 +3,9 @@ name: E2E (clone platform)
 # Clone-e2e lane (infra provisioning plan §9 / repo CLAUDE.md next-steps):
 # full IntegrationSuite in external-services mode against the same
 # Redpanda v25.1.1 + Scylla 2025.1 images as local dev and the platform environments.
-# Runs on GitHub-hosted runners: the repository is public, and the teob-cc self-hosted
-# runners are not offered to public repositories (an outside pull request must never run there).
+# Runs on teob-cc's own runners for public repositories ([self-hosted, test-public]: the runner group
+# "public", no cluster secrets, internet-only egress; infra-skills tools/k3s/public-runners.sh). Never on
+# GitHub-hosted runners. A pull request from a fork waits for a maintainer's approval before it runs.
 
 on:
   workflow_dispatch:
@@ -23,7 +24,7 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, test-public]
 
     timeout-minutes: 90
 
@@ -56,7 +57,7 @@ jobs:
         run: sbt tests/test
         env:
           KAFKA_JOURNAL_EXTERNAL_SERVICES: "true"
-          # .jvmopts (-Xmx4G) fits the hosted runner's 16 GB next to Redpanda and Scylla
+          # .jvmopts (-Xmx4G) fits the runner pod (12 GiB; dockerd, with Redpanda and Scylla, has its own 8 GiB)
           JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=85.0 -Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"
 
       - name: Service logs on failure

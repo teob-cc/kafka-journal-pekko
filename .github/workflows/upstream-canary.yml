@@ -12,7 +12,8 @@ on:
 
 jobs:
   upstream-canary:
-    runs-on: ubuntu-latest
+    # teob-cc's own runners for public repositories, never GitHub-hosted ones (see e2e.yml)
+    runs-on: [self-hosted, test-public]
 
     timeout-minutes: 90
 
