@@ -85,7 +85,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          RUNS=$(gh api "repos/${{ github.repository }}/actions/workflows/e2e.yml/runs?head_sha=${{ github.sha }}&status=success" --jq '.total_count')
+          set -euo pipefail
+          # curl + jq, not gh: the runner image carries no gh CLI
+          RUNS=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/${{ github.repository }}/actions/workflows/e2e.yml/runs?head_sha=${{ github.sha }}&status=success" \
+            | jq -r '.total_count')
           if [ "$RUNS" = "0" ]; then
             echo "E2E (clone platform) has not passed on ${{ github.sha }}; push it to master (or dispatch e2e.yml) and wait for green" >&2
             exit 1
