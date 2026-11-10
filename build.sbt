@@ -4,8 +4,9 @@ import sbt.Package.ManifestAttributes
 
 // CalVer: <yyyyMM>.<minor> base, bumped by hand. Every build is <base>-SNAPSHOT, which is what a
 // master push publishes (to the Central snapshots repository); a release is deliberate and names its
-// version, e.g. 202610.01.6, through PACKAGE_VERSION (the release workflow's input).
-lazy val versionBase = "202611.01"
+// version, e.g. 202611.1.0, through PACKAGE_VERSION (the release workflow's input). The minor is not
+// zero-padded, matching teob's release tags (v202611.1.0).
+lazy val versionBase = "202611.1"
 ThisBuild / version := {
   sys
     .env
