@@ -19,7 +19,7 @@ Key facts:
 | `origin` | teob-cc/kafka-journal-pekko | ours — push here, `--force-with-lease` after rebases |
 | `upstream` | evolution-gaming/kafka-journal | **fetch-only** — push URL set to `DISABLED` |
 
-Versioning is **CalVer** (`build.sbt`): base `<yyyyMM>.<minor>` bumped by hand (`versionBase`). Every build is `<base>-SNAPSHOT`; a release names its version (`<base>.<n>`, e.g. `202611.01.1`) through `PACKAGE_VERSION`.
+Versioning is **CalVer** (`build.sbt`): base `<yyyyMM>.<minor>` bumped by hand (`versionBase`). Every build is `<base>-SNAPSHOT`; a release names its version (`<base>.<n>`, e.g. `202611.1.0`; the minor is not zero-padded, matching teob's tags) through `PACKAGE_VERSION`.
 
 Publishing — **snapshots on every green push, releases only on purpose**:
 - A master push runs `e2e.yml` (the full IntegrationSuite against Redpanda + Scylla). When it is green, `snapshot.yml` publishes `<base>-SNAPSHOT` from exactly that commit to the Maven Central snapshots repository. Nothing else is published.
