@@ -14,8 +14,9 @@ name: Release
 # With dry_run it builds, signs and stages (with `central: false`: stages into target/repository unsigned), and lists
 # what would be published.
 #
-# Runs on GitHub-hosted runners: the repository is public, and the teob-cc self-hosted runners are not offered to
-# public repositories.
+# Runs on teob-cc's own runners for public repositories ([self-hosted, test-public], see e2e.yml), never on
+# GitHub-hosted ones: the platform Nexus API admits private and Tailscale addresses only, which these runners reach it
+# from.
 #
 # Secrets: SONATYPE_USER, SONATYPE_PASSWORD, GPG_SECRET, GPG_PASS (organisation-wide, shared with the cats-effect and
 # blaze forks; unused with `central: false`); NEXUS_USERNAME, NEXUS_PASSWORD in the `test` environment;
@@ -54,7 +55,7 @@ env:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, test-public]
     timeout-minutes: 90
 
     environment:
