@@ -9,12 +9,12 @@ import cats.syntax.all.*
  * writer issues it through a [[Journals]] made with that origin, and the delete action carries it
  * to the replicator.
  *
- * A tiering delete must stay below the latest cutoff: the epoch record at the cutoff ([[EpochMark]])
- * is where every replay starts, and a delete at or past it leaves a journal that cannot be replayed
- * ([[ShortReplayError]]). The replicator refuses one at or past the latest cutoff, or one of a
- * journal with no cutoff: the replicated journal is left as it was, and the refusal is logged as an
- * error and counted (`TopicReplicatorMetrics.tieringDeleteRefused`). Every replicator built from
- * this library does so.
+ * A tiering delete must stay below the latest cutoff: the epoch record at the cutoff
+ * ([[EpochMark]]) is where every replay starts, and a delete at or past it leaves a journal that
+ * cannot be replayed ([[ShortReplayError]]). The replicator refuses one at or past the latest
+ * cutoff, or one of a journal with no cutoff: the replicated journal is left as it was, and the
+ * refusal is logged as an error and counted (`TopicReplicatorMetrics.tieringDeleteRefused`). Every
+ * replicator built from this library does so.
  *
  * The replicator checks each delete on its own, before it merges the deletes of a journal that
  * arrive in one poll into the largest one: a refused delete never takes a smaller allowed one with
@@ -40,8 +40,8 @@ object TieringDelete {
   def refused(deleteTo: SeqNr, cutoff: Option[SeqNr]): Boolean = cutoff.forall { cutoff => deleteTo >= cutoff }
 
   /**
-   * A tiering delete the replicator refused: the journal, the seqNr it would have deleted up to, and
-   * the journal's latest cutoff when the delete was to be applied, `None` when it had none.
+   * A tiering delete the replicator refused: the journal, the seqNr it would have deleted up to,
+   * and the journal's latest cutoff when the delete was to be applied, `None` when it had none.
    */
   final case class Refused(key: Key, deleteTo: SeqNr, cutoff: Option[SeqNr]) {
 
