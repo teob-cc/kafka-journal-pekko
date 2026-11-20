@@ -1,4 +1,4 @@
-# Redpanda + ScyllaDB for local dev and the clone-platform integration tests.
+# Apache Kafka (KRaft, single node) + ScyllaDB for local dev and the clone-platform integration tests.
 #
 # The integration suite (tests/) binds host ports 9092 (Kafka API) and 9042 (CQL)
 # statically. With KAFKA_JOURNAL_EXTERNAL_SERVICES=true the suite skips starting
@@ -7,32 +7,46 @@
 #   docker compose up -d --wait
 #   KAFKA_JOURNAL_EXTERNAL_SERVICES=true sbt tests/test
 #
-# Same images/major versions as CI, cit and prod — one platform, four tiers.
+# Same broker version as CI and the platform environments (Strimzi, Kafka 4.3.2; INFRA-205).
 services:
-  redpanda:
-    # KJ_REDPANDA_IMAGE re-points at a mirror (CI: Harbor Docker-Hub proxy); the
-    # default here is THE version pin — keep .github/workflows/clone-e2e.yml in sync
-    image: ${KJ_REDPANDA_IMAGE:-redpandadata/redpanda:v25.1.1}
-    container_name: kafka-journal-redpanda
-    command:
-      - redpanda
-      - start
-      - --mode=dev-container # implies --overprovisioned + relaxed fsync/ballast for dev
-      - --smp=1
-      - --memory=1G
-      - --reserve-memory=0M
-      - --kafka-addr=internal://0.0.0.0:29092,external://0.0.0.0:9092
-      - --advertise-kafka-addr=internal://redpanda:29092,external://localhost:9092
+  kafka:
+    # KJ_KAFKA_IMAGE re-points at a mirror (e.g. a Harbor Docker-Hub proxy); the default
+    # here is THE version pin for this stack. The healthcheck needs the JVM image's
+    # /opt/kafka/bin tools, so a mirror must be of apache/kafka, not apache/kafka-native.
+    # (IntegrationSuite reads KJ_KAFKA_IMAGE too, but only in testcontainers mode.)
+    image: ${KJ_KAFKA_IMAGE:-apache/kafka:4.3.2}
+    container_name: kafka-journal-kafka
+    hostname: kafka
+    environment:
+      # one combined controller+broker node; every replication setting explicit,
+      # because Kafka's defaults assume three brokers (transactions hang otherwise)
+      CLUSTER_ID: kafka-journal-dev-0001
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xmx1G -Xms1G
     ports:
       - "9092:9092" # host clients (sbt tests, kafka-journal defaults)
-      - "9644:9644" # admin API + /public_metrics
     volumes:
-      - redpanda_data:/var/lib/redpanda/data
+      - kafka_data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health --exit-when-healthy || exit 1"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"]
       interval: 5s
-      timeout: 5s
+      timeout: 10s
       retries: 12
+      start_period: 10s
 
   scylla:
     image: ${KJ_SCYLLA_IMAGE:-scylladb/scylla:2025.1}
@@ -51,5 +65,5 @@ services:
       retries: 18
 
 volumes:
-  redpanda_data:
+  kafka_data:
   scylla_data:

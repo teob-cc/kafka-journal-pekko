@@ -2,7 +2,7 @@ name: E2E (clone platform)
 
 # Clone-e2e lane (infra provisioning plan §9 / repo CLAUDE.md next-steps):
 # full IntegrationSuite in external-services mode against the same
-# Redpanda v25.1.1 + Scylla 2025.1 images as local dev and the platform environments.
+# Apache Kafka 4.3.2 (KRaft, single node) + Scylla 2025.1 images as local dev and the platform environments.
 # Runs on teob-cc's own runners for public repositories ([self-hosted, test-public]: the runner group
 # "public", no cluster secrets, internet-only egress; infra-skills tools/k3s/public-runners.sh). Never on
 # GitHub-hosted runners. A pull request from a fork waits for a maintainer's approval before it runs.
@@ -42,8 +42,8 @@ jobs:
       - name: Setup sbt
         uses: sbt/setup-sbt@v1
 
-      - name: Start Redpanda + Scylla (fresh volumes)
-        # --wait blocks on the compose healthchecks (rpk cluster health / cqlsh).
+      - name: Start Kafka + Scylla (fresh volumes)
+        # --wait blocks on the compose healthchecks (kafka-broker-api-versions.sh / cqlsh).
         # down -v first is belt-and-braces: the TCK needs a virgin journal and
         # ephemeral runners never carry volumes, but a local rerun must not
         # see stale data (see CLAUDE.md on JSON-decode fallback
@@ -57,14 +57,14 @@ jobs:
         run: sbt tests/test
         env:
           KAFKA_JOURNAL_EXTERNAL_SERVICES: "true"
-          # .jvmopts (-Xmx4G) fits the runner pod (12 GiB; dockerd, with Redpanda and Scylla, has its own 8 GiB)
+          # .jvmopts (-Xmx4G) fits the runner pod (12 GiB; dockerd, with Kafka and Scylla, has its own 8 GiB)
           JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=85.0 -Dcats.effect.tracing.mode=none -XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -XX:+UseStringDeduplication"
 
       - name: Service logs on failure
         if: failure()
         run: |
-          echo "=== redpanda ==="
-          docker compose logs --tail=150 redpanda || true
+          echo "=== kafka ==="
+          docker compose logs --tail=150 kafka || true
           echo "=== scylla ==="
           docker compose logs --tail=150 scylla || true
 
@@ -76,4 +76,4 @@ jobs:
         run: |
           echo "### Clone-platform E2E green ✅" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "IntegrationSuite against Redpanda v25.1.1 + Scylla 2025.1 (external-services mode, fresh volumes)" >> $GITHUB_STEP_SUMMARY
+          echo "IntegrationSuite against Apache Kafka 4.3.2 + Scylla 2025.1 (external-services mode, fresh volumes)" >> $GITHUB_STEP_SUMMARY
