@@ -9,7 +9,7 @@ The **teob-cc fork of [evolution-gaming/kafka-journal](https://github.com/evolut
 Key facts:
 
 - **Vendored dependencies:** all 17 Evolution libraries (skafka, scassandra, cats-helper, scache, cassandra-sync, smetrics, …) live as *source* in `libs/` (~21.8k lines). A quirk in any client library is a patchable event here, not an upstream ticket. See `NOTICE.md` for provenance.
-- **Clone platform:** we run this against **Redpanda** (Kafka API) and **ScyllaDB** (CQL) — *not* JVM Kafka/Cassandra. Apache Kafka and Cassandra exist in our world only as client protocols. Gating spike 2026-07-19: full `IntegrationSuite` **149/149 green** against Redpanda v25.1.1 + Scylla 2025.1, zero client patches. Local stack: `docker compose up -d --wait` (see `docker-compose.yml`), then `KAFKA_JOURNAL_EXTERNAL_SERVICES=true sbt tests/test`. **Full suite runs (anything including the Pekko TCK) need fresh volumes — `docker compose down -v` first**: the TCK uses fixed persistence ids and assumes a virgin journal; stale data shows up as JSON-decode fallback failures in the replay specs, not as an honest "dirty state" error.
+- **Platform:** we run this against **Apache Kafka 4.3.2** (KRaft, single combined controller+broker node; Strimzi on the platform) and **ScyllaDB** (CQL) — *not* Cassandra, which exists in our world only as a client protocol. Until 2026-11 the broker was Redpanda v25.1.1 (gating spike 2026-07-19: full `IntegrationSuite` **149/149 green** against Redpanda + Scylla 2025.1, zero client patches); INFRA-205 replaced it with Apache Kafka at every level (dev, CI, cluster) because Redpanda's Community Edition is being restricted. Local stack: `docker compose up -d --wait` (see `docker-compose.yml`), then `KAFKA_JOURNAL_EXTERNAL_SERVICES=true sbt tests/test`. **Full suite runs (anything including the Pekko TCK) need fresh volumes — `docker compose down -v` first**: the TCK uses fixed persistence ids and assumes a virgin journal; stale data shows up as JSON-decode fallback failures in the replay specs, not as an honest "dirty state" error.
 - **History discipline:** our commits are a short readable stack replayed on top of upstream master (insourcing → scala-3 migration → v9.1.1 catch-up → stabilize → identity → publish pipeline → clone spike). We **rebase onto upstream**, never merge. After a rebase, push is `git push --force-with-lease origin master`.
 
 ## Remotes — careful
@@ -21,8 +21,8 @@ Key facts:
 
 Versioning is **CalVer** (`build.sbt`): base `<yyyyMM>.<minor>` bumped by hand (`versionBase`). Every build is `<base>-SNAPSHOT`; a release names its version (`<base>.<n>`, e.g. `202611.1.0`; the minor is not zero-padded, matching teob's tags) through `PACKAGE_VERSION`.
 
-Publishing — **snapshots on every green push, releases only on purpose**:
-- A master push runs `e2e.yml` (the full IntegrationSuite against Redpanda + Scylla). When it is green, `snapshot.yml` publishes `<base>-SNAPSHOT` from exactly that commit to the Maven Central snapshots repository. Nothing else is published.
+Publishing — **releases only, on purpose**:
+- A master push (and every PR) runs `e2e.yml` (the full IntegrationSuite against Kafka + Scylla). Nothing is published from it: the snapshot publish was dropped in #1 (Central rejects SNAPSHOTs for cc.teob and nothing consumed them).
 - `release.yml` is dispatched by hand with a `version`. It refuses a commit whose e2e did not pass and a version already tagged, then releases to Maven Central, publishes to the platform Nexus, hands the commit to the lambda-house mirror and tags `v<version>`. `dry_run` builds, signs and stages only.
 - teob and every other service depend on releases only, never on snapshots.
 - The repository is public; every workflow runs on `[self-hosted, test-public]`, teob-cc's runner pool for public repositories (runner group `public`: no cluster secrets, internet-only egress, fork PRs wait for approval; infra-skills `tools/k3s/public-runners.sh`). Never on GitHub-hosted runners.
@@ -44,7 +44,7 @@ Two plans in `~/work/teob/.claude/plans/` drive all work here:
 
 ## Near-term work queue (from the plans)
 
-1. **`ResetPointersApp`** admin tool: after a Redpanda topic recreation, `pointer2`/`metajournal` in Scylla reference stale offsets; upstream documents nothing. Needed for the single-node recovery runbook.
+1. **`ResetPointersApp`** admin tool: after a topic recreation or a broker swap (e.g. INFRA-205's Redpanda → Kafka move), `pointer2`/`metajournal` in Scylla reference stale offsets; upstream documents nothing. Needed for the single-node recovery runbook.
 2. **Watch upstream #532** (Cassandra snapshot store) — when it ships, evaluate replacing pekko-persistence-cassandra for TEOB snapshots.
 3. **Rebase cadence:** track upstream master; small frequent rebases beat big ones (this last one was cheap because upstream had only moved 3 build commits past v9.1.1).
 
